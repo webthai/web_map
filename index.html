@@ -4,7 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>แผนที่ออฟไลน์</title>
-<link rel="manifest" href="data:application/manifest+json,{%22name%22:%22Offline%20Map%22,%22start_url%22:%22.%2F%22,%22display%22:%22standalone%22,%22background_color%22:%22%23111827%22,%22theme_color%22:%22%23111827%22}">
+<link rel="manifest" href="data:application/manifest+json,{%22name%22:%22Offline%20Map%22,%22start_url%22:%22.%2F%22,%22display%22:%22standalone%22,%22background_color%22:%22%23111827%22,%22theme_color%22:%22%23111827%22,%22icons%22:[{%22src%22:%221.png%22,%22sizes%22:%22512x512%22,%22type%22:%22image%2Fpng%22}]}">
+<link rel="icon" type="image/png" href="1.png">
+<link rel="apple-touch-icon" href="1.png">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   :root{
@@ -208,7 +210,7 @@
    ========================================================================= */
 // ตั้งค่า URL ของ Google Apps Script Web App ที่นี่ (ดู README)
 // เมื่อกำหนดค่าตรงนี้แล้ว ผู้ใช้ทุกคน/ทุกเครื่องจะไม่ต้องกรอกซ้ำ
-const DEFAULT_SCRIPT_URL = ""; // <-- วาง URL หลัง deploy Apps Script ตรงนี้
+const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzZ2ZfW51dZ_GC3c4C3_tou2279046t_kkZm08xDPJBvy9pPHfQgnS1oTtbQ7JhmltMZg/exec";
 
 const TZ = 'Asia/Bangkok';
 const OSM_TILE_TEMPLATE = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';

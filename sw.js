@@ -6,6 +6,7 @@ var SHELL_CACHE = 'map-app-shell-v1';
 var SHELL_FILES = [
   './',
   './index.html',
+  './1.png',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
 ];
