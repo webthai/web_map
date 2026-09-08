@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>แผนที่ออฟไลน์</title>
+<link rel="manifest" href="data:application/manifest+json,{%22name%22:%22Offline%20Map%22,%22start_url%22:%22.%2F%22,%22display%22:%22standalone%22,%22background_color%22:%22%23111827%22,%22theme_color%22:%22%23111827%22}">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root{
+    --bg:#0f172a; --panel:#111827; --panel2:#1f2937; --line:#2b3546;
+    --text:#e5e7eb; --muted:#94a3b8; --accent:#22c55e; --accent2:#3b82f6;
+    --danger:#ef4444; --warn:#f59e0b; --radius:12px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);}
+  button{font-family:inherit;cursor:pointer;}
+  input,select,textarea{font-family:inherit;}
+
+  /* ---------- layout ---------- */
+  #app{display:none;height:100%;flex-direction:column;}
+  #topbar{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--panel);border-bottom:1px solid var(--line);z-index:1000;}
+  #topbar h1{font-size:15px;margin:0;flex:0 0 auto;white-space:nowrap;}
+  #statusPill{display:flex;align-items:center;gap:5px;font-size:12px;padding:4px 9px;border-radius:20px;background:var(--panel2);white-space:nowrap;}
+  #statusDot{width:8px;height:8px;border-radius:50%;background:var(--danger);}
+  #statusPill.online #statusDot{background:var(--accent);}
+  #topbar .spacer{flex:1;}
+  #userBadge{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px;}
+  .iconbtn{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;}
+  .iconbtn:active{background:var(--accent2);}
+
+  #main{flex:1;display:flex;min-height:0;position:relative;}
+  #map{flex:1;min-width:0;background:#0a0f1a;}
+  #panel{width:320px;flex:0 0 auto;background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden;}
+  #tabs{display:flex;border-bottom:1px solid var(--line);}
+  .tab{flex:1;text-align:center;padding:10px 4px;font-size:12px;background:none;border:none;color:var(--muted);border-bottom:2px solid transparent;}
+  .tab.active{color:var(--text);border-bottom-color:var(--accent2);}
+  #panelBody{flex:1;overflow-y:auto;padding:10px;}
+  .section{display:none;}
+  .section.active{display:block;}
+  .card{background:var(--panel2);border:1px solid var(--line);border-radius:var(--radius);padding:10px;margin-bottom:10px;}
+  .card h3{margin:0 0 6px;font-size:13px;color:var(--muted);font-weight:600;}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;}
+  input[type=text],input[type=password],textarea,select{width:100%;padding:9px 10px;border-radius:8px;border:1px solid var(--line);background:#0b1220;color:var(--text);font-size:14px;}
+  textarea{resize:vertical;min-height:50px;}
+  .btn{display:block;width:100%;padding:10px;border-radius:9px;border:none;font-size:14px;font-weight:600;margin-top:8px;}
+  .btn-primary{background:var(--accent2);color:#fff;}
+  .btn-green{background:var(--accent);color:#062b13;}
+  .btn-danger{background:var(--danger);color:#fff;}
+  .btn-ghost{background:var(--panel2);color:var(--text);border:1px solid var(--line);}
+  .row{display:flex;gap:8px;}
+  .row .btn{margin-top:8px;}
+  .place-item{display:flex;justify-content:space-between;align-items:center;padding:8px;border-bottom:1px solid var(--line);gap:6px;}
+  .place-item:last-child{border-bottom:none;}
+  .place-item .info{min-width:0;flex:1;}
+  .place-item .info b{display:block;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .place-item .info span{font-size:11px;color:var(--muted);}
+  .place-item .acts{display:flex;gap:4px;flex:0 0 auto;}
+  .place-item .acts button{padding:5px 7px;font-size:11px;border-radius:6px;border:1px solid var(--line);background:#0b1220;color:var(--text);}
+  .muted{color:var(--muted);font-size:12px;}
+  .progress-wrap{background:#0b1220;border-radius:8px;overflow:hidden;height:8px;margin-top:6px;}
+  .progress-bar{height:100%;background:var(--accent2);width:0%;transition:width .2s;}
+  .area-item{padding:8px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px;font-size:12px;}
+  .area-item .top{display:flex;justify-content:space-between;align-items:center;}
+  .badge{font-size:10px;padding:2px 6px;border-radius:10px;background:#0b1220;color:var(--muted);}
+  .badge.admin{background:#3b2306;color:var(--warn);}
+  .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#111827;border:1px solid var(--line);color:var(--text);padding:10px 16px;border-radius:9px;font-size:13px;z-index:5000;box-shadow:0 4px 20px rgba(0,0,0,.4);max-width:90vw;text-align:center;}
+
+  /* ---------- auth screen ---------- */
+  #authScreen{height:100%;display:flex;align-items:center;justify-content:center;padding:20px;}
+  #authBox{width:100%;max-width:360px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px;}
+  #authBox h2{margin:0 0 4px;font-size:19px;}
+  #authBox p.sub{margin:0 0 16px;color:var(--muted);font-size:13px;}
+  #authError{color:var(--danger);font-size:12px;margin-top:6px;min-height:14px;}
+  #authToggle{text-align:center;margin-top:14px;font-size:13px;color:var(--accent2);}
+
+  #configScreen{height:100%;display:flex;align-items:center;justify-content:center;padding:20px;}
+  #configBox{width:100%;max-width:420px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px;}
+
+  .leaflet-marker-icon.mine{filter:hue-rotate(120deg);}
+
+  /* ---------- mobile ---------- */
+  @media (max-width:720px){
+    #panel{position:absolute;left:0;right:0;bottom:0;width:auto;height:46%;border-left:none;border-top:1px solid var(--line);border-radius:16px 16px 0 0;box-shadow:0 -6px 24px rgba(0,0,0,.4);}
+    #topbar h1{font-size:13px;}
+    #userBadge{max-width:70px;}
+  }
+</style>
+</head>
+<body>
+
+<!-- ================= CONFIG SCREEN (first run only) ================= -->
+<div id="configScreen">
+  <div id="configBox">
+    <h2>ตั้งค่า Apps Script URL</h2>
+    <p class="sub">กรอกครั้งแรกครั้งเดียว ระบบจะจำไว้ในเครื่องนี้ (ถ้าตั้งค่า DEFAULT_SCRIPT_URL ในโค้ดไว้แล้วจะข้ามหน้านี้อัตโนมัติ)</p>
+    <label>Web App URL ของ Google Apps Script</label>
+    <input type="text" id="cfgUrl" placeholder="https://script.google.com/macros/s/xxxx/exec">
+    <div id="cfgError" style="color:var(--danger);font-size:12px;margin-top:6px;"></div>
+    <button class="btn btn-primary" onclick="saveConfig()">บันทึกและเริ่มใช้งาน</button>
+  </div>
+</div>
+
+<!-- ================= AUTH SCREEN ================= -->
+<div id="authScreen" style="display:none;">
+  <div id="authBox">
+    <h2 id="authTitle">เข้าสู่ระบบ</h2>
+    <p class="sub" id="authSub">เข้าสู่ระบบเพื่อซิงก์หมุดที่บันทึกไว้กับ Google Sheets</p>
+    <label>ชื่อผู้ใช้</label>
+    <input type="text" id="authUsername" autocomplete="username">
+    <label>รหัสผ่าน</label>
+    <input type="password" id="authPassword" autocomplete="current-password">
+    <div id="authError"></div>
+    <button class="btn btn-primary" id="authSubmitBtn" onclick="submitAuth()">เข้าสู่ระบบ</button>
+    <button class="btn btn-ghost" onclick="useOfflineGuest()">ใช้งานแบบไม่ล็อกอิน (ออฟไลน์เท่านั้น)</button>
+    <div id="authToggle" onclick="toggleAuthMode()">ยังไม่มีบัญชี? สมัครสมาชิก</div>
+  </div>
+</div>
+
+<!-- ================= MAIN APP ================= -->
+<div id="app">
+  <div id="topbar">
+    <h1>🗺️ แผนที่ออฟไลน์</h1>
+    <div id="statusPill"><div id="statusDot"></div><span id="statusText">ออฟไลน์</span></div>
+    <div class="spacer"></div>
+    <span id="userBadge"></span>
+    <button class="iconbtn" onclick="doLogout()">ออก</button>
+  </div>
+  <div id="main">
+    <div id="map"></div>
+    <div id="panel">
+      <div id="tabs">
+        <button class="tab active" data-tab="places" onclick="switchTab('places')">📍 หมุด</button>
+        <button class="tab" data-tab="route" onclick="switchTab('route')">🧭 เส้นทาง</button>
+        <button class="tab" data-tab="offline" onclick="switchTab('offline')">⬇️ ดาวน์โหลด</button>
+      </div>
+      <div id="panelBody">
+
+        <!-- PLACES TAB -->
+        <div class="section active" id="tab-places">
+          <div class="card">
+            <h3>เพิ่มหมุดใหม่</h3>
+            <button class="btn btn-green" id="addPinBtn" onclick="armAddPin()">แตะแผนที่เพื่อปักหมุด</button>
+          </div>
+          <div class="card">
+            <h3>สถานที่ที่บันทึกไว้ (<span id="placeCount">0</span>)</h3>
+            <div id="placesList"><p class="muted">ยังไม่มีข้อมูล</p></div>
+          </div>
+        </div>
+
+        <!-- ROUTE TAB -->
+        <div class="section" id="tab-route">
+          <div class="card">
+            <h3>จุดเริ่มต้น</h3>
+            <div class="muted" id="startLabel">ยังไม่ได้เลือก</div>
+            <div class="row">
+              <button class="btn btn-ghost" onclick="armRoutePick('start')">เลือกบนแผนที่</button>
+              <button class="btn btn-ghost" onclick="useGPS('start')">📍 ตำแหน่งฉัน</button>
+            </div>
+          </div>
+          <div class="card">
+            <h3>จุดหมาย</h3>
+            <div class="muted" id="endLabel">ยังไม่ได้เลือก</div>
+            <button class="btn btn-ghost" onclick="armRoutePick('end')">เลือกบนแผนที่</button>
+          </div>
+          <button class="btn btn-primary" onclick="calculateRoute()">คำนวณเส้นทาง</button>
+          <button class="btn btn-ghost" onclick="clearRoute()">ล้างเส้นทาง</button>
+          <div class="card" id="routeResult" style="display:none;">
+            <h3>ผลลัพธ์</h3>
+            <div id="routeInfo" class="muted"></div>
+          </div>
+        </div>
+
+        <!-- OFFLINE TAB -->
+        <div class="section" id="tab-offline">
+          <div class="card">
+            <h3>ดาวน์โหลดพื้นที่ที่เห็นในจอ</h3>
+            <p class="muted">แนะนำ: ซูมแผนที่ให้อยู่ในระดับ "อำเภอ/ตำบล" ก่อนกดดาวน์โหลด ยิ่งพื้นที่กว้างยิ่งใช้พื้นที่เก็บข้อมูลมาก</p>
+            <label>ชื่อพื้นที่</label>
+            <input type="text" id="areaName" placeholder="เช่น อ.เมือง จ.เชียงใหม่">
+            <label>ระดับซูมที่จะเก็บ</label>
+            <select id="zoomRange">
+              <option value="12,16">มาตรฐาน (ซูม 12–16)</option>
+              <option value="12,17">ละเอียดขึ้น (ซูม 12–17, ไฟล์ใหญ่ขึ้น)</option>
+              <option value="12,14">ประหยัดพื้นที่ (ซูม 12–14)</option>
+            </select>
+            <button class="btn btn-primary" onclick="startAreaDownload()">เริ่มดาวน์โหลดแผนที่ + ถนน</button>
+            <div class="progress-wrap"><div class="progress-bar" id="dlProgress"></div></div>
+            <div class="muted" id="dlStatus"></div>
+          </div>
+          <div class="card">
+            <h3>พื้นที่ที่ดาวน์โหลดแล้ว</h3>
+            <div id="areaList"><p class="muted">ยังไม่มี</p></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toastHost"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+/* =========================================================================
+   CONFIG
+   ========================================================================= */
+// ตั้งค่า URL ของ Google Apps Script Web App ที่นี่ (ดู README)
+// เมื่อกำหนดค่าตรงนี้แล้ว ผู้ใช้ทุกคน/ทุกเครื่องจะไม่ต้องกรอกซ้ำ
+const DEFAULT_SCRIPT_URL = ""; // <-- วาง URL หลัง deploy Apps Script ตรงนี้
+
+const TZ = 'Asia/Bangkok';
+const OSM_TILE_TEMPLATE = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const OSM_SUBDOMAINS = ['a','b','c'];
+const OSRM_URL = 'https://router.project-osrm.org/route/v1/driving/';
+const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+
+let SCRIPT_URL = localStorage.getItem('mapapp_script_url') || DEFAULT_SCRIPT_URL || '';
+
+/* =========================================================================
+   TOAST / UTIL
+   ========================================================================= */
+function toast(msg, ms){
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = msg;
+  document.getElementById('toastHost').appendChild(el);
+  setTimeout(()=>el.remove(), ms||2600);
+}
+function fmtTH(dateStr){
+  try{
+    const d = dateStr ? new Date(dateStr) : new Date();
+    return d.toLocaleString('th-TH', {timeZone: TZ, dateStyle:'medium', timeStyle:'short'});
+  }catch(e){ return dateStr || ''; }
+}
+async function sha256Hex(str){
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+/* =========================================================================
+   CONFIG SCREEN (script URL)
+   ========================================================================= */
+function saveConfig(){
+  const v = document.getElementById('cfgUrl').value.trim();
+  if(!v.startsWith('https://script.google.com/')){
+    document.getElementById('cfgError').textContent = 'กรุณาวาง URL ของ Apps Script Web App ให้ถูกต้อง';
+    return;
+  }
+  localStorage.setItem('mapapp_script_url', v);
+  SCRIPT_URL = v;
+  boot();
+}
+
+/* =========================================================================
+   API CALLS  (text/plain POST body to avoid CORS preflight issues on Apps Script)
+   ========================================================================= */
+async function apiCall(action, payload){
+  if(!SCRIPT_URL){ throw new Error('NO_SCRIPT_URL'); }
+  const body = Object.assign({action, token: currentUser && currentUser.token}, payload||{});
+  const res = await fetch(SCRIPT_URL, {
+    method: 'POST',
+    headers: {'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify(body)
+  });
+  const data = await res.json();
+  return data;
+}
+
+/* =========================================================================
+   OUTBOX (queued writes made while offline, synced when back online)
+   ========================================================================= */
+function getOutbox(){ return JSON.parse(localStorage.getItem('mapapp_outbox')||'[]'); }
+function setOutbox(arr){ localStorage.setItem('mapapp_outbox', JSON.stringify(arr)); }
+function queueOutbox(action, payload){
+  const q = getOutbox();
+  q.push({action, payload, ts: Date.now()});
+  setOutbox(q);
+  toast('บันทึกไว้ในเครื่อง จะซิงก์อัตโนมัติเมื่อมีเน็ต');
+}
+async function flushOutbox(){
+  if(!navigator.onLine || !currentUser) return;
+  let q = getOutbox();
+  if(!q.length) return;
+  const remaining = [];
+  for(const item of q){
+    try{
+      const r = await apiCall(item.action, item.payload);
+      if(!r.ok) remaining.push(item);
+    }catch(e){ remaining.push(item); }
+  }
+  setOutbox(remaining);
+  if(remaining.length < q.length) { toast('ซิงก์ข้อมูลที่ค้างไว้เรียบร้อย'); await loadBootstrap(); }
+}
+
+/* =========================================================================
+   ONLINE / OFFLINE STATUS
+   ========================================================================= */
+function updateStatusPill(){
+  const pill = document.getElementById('statusPill');
+  const text = document.getElementById('statusText');
+  if(navigator.onLine){ pill.classList.add('online'); text.textContent='ออนไลน์'; }
+  else { pill.classList.remove('online'); text.textContent='ออฟไลน์'; }
+}
+window.addEventListener('online', ()=>{ updateStatusPill(); flushOutbox(); });
+window.addEventListener('offline', updateStatusPill);
+
+/* =========================================================================
+   AUTH
+   ========================================================================= */
+let currentUser = JSON.parse(localStorage.getItem('mapapp_user')||'null');
+let authMode = 'login';
+
+function toggleAuthMode(){
+  authMode = authMode === 'login' ? 'register' : 'login';
+  document.getElementById('authTitle').textContent = authMode==='login' ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก';
+  document.getElementById('authSub').textContent = authMode==='login'
+    ? 'เข้าสู่ระบบเพื่อซิงก์หมุดที่บันทึกไว้กับ Google Sheets'
+    : 'คนแรกที่สมัครจะได้เป็นแอดมินอัตโนมัติ';
+  document.getElementById('authSubmitBtn').textContent = authMode==='login' ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก';
+  document.getElementById('authToggle').textContent = authMode==='login' ? 'ยังไม่มีบัญชี? สมัครสมาชิก' : 'มีบัญชีแล้ว? เข้าสู่ระบบ';
+  document.getElementById('authError').textContent = '';
+}
+
+async function submitAuth(){
+  const username = document.getElementById('authUsername').value.trim();
+  const password = document.getElementById('authPassword').value;
+  const errEl = document.getElementById('authError');
+  errEl.textContent = '';
+  if(!username || !password){ errEl.textContent = 'กรอกให้ครบทั้งสองช่อง'; return; }
+  if(!navigator.onLine){ errEl.textContent = 'ต้องมีอินเทอร์เน็ตสำหรับเข้าสู่ระบบ/สมัครครั้งแรก'; return; }
+  try{
+    const passwordHash = await sha256Hex(password);
+    const r = await apiCallNoAuth(authMode==='login'?'login':'register', {username, passwordHash});
+    if(!r.ok){ errEl.textContent = r.error || 'เกิดข้อผิดพลาด'; return; }
+    currentUser = {userId:r.userId, username:r.username, role:r.role, token:r.token};
+    localStorage.setItem('mapapp_user', JSON.stringify(currentUser));
+    enterApp();
+  }catch(e){ errEl.textContent = 'เชื่อมต่อไม่ได้: '+e.message; }
+}
+async function apiCallNoAuth(action, payload){
+  const res = await fetch(SCRIPT_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify(Object.assign({action}, payload))});
+  return res.json();
+}
+
+function useOfflineGuest(){
+  currentUser = {userId:'guest', username:'ผู้เยี่ยมชม (ออฟไลน์)', role:'guest', token:null};
+  localStorage.setItem('mapapp_user', JSON.stringify(currentUser));
+  enterApp();
+  toast('โหมดออฟไลน์: หมุดที่เพิ่มจะเก็บไว้ในเครื่องนี้เท่านั้น');
+}
+
+function doLogout(){
+  localStorage.removeItem('mapapp_user');
+  currentUser = null;
+  document.getElementById('app').style.display='none';
+  document.getElementById('authScreen').style.display='flex';
+}
+
+function enterApp(){
+  document.getElementById('authScreen').style.display='none';
+  document.getElementById('app').style.display='flex';
+  document.getElementById('userBadge').innerHTML =
+    currentUser.username + (currentUser.role==='admin' ? ' <span class="badge admin">admin</span>' : '');
+  initMapIfNeeded();
+  loadBootstrap();
+  loadAreaList();
+}
+
+/* =========================================================================
+   BOOTSTRAP (single combined initial-load call)
+   ========================================================================= */
+let placesCache = [];
+async function loadBootstrap(){
+  if(currentUser.role==='guest'){
+    placesCache = JSON.parse(localStorage.getItem('mapapp_guest_places')||'[]');
+    renderPlaces();
+    return;
+  }
+  if(!navigator.onLine){
+    placesCache = JSON.parse(localStorage.getItem('mapapp_places_cache')||'[]');
+    renderPlaces();
+    return;
+  }
+  try{
+    const r = await apiCall('bootstrap', {});
+    if(r.ok){
+      placesCache = r.places || [];
+      localStorage.setItem('mapapp_places_cache', JSON.stringify(placesCache));
+      renderPlaces();
+    }
+  }catch(e){
+    placesCache = JSON.parse(localStorage.getItem('mapapp_places_cache')||'[]');
+    renderPlaces();
+  }
+}
+
+/* =========================================================================
+   MAP SETUP + OFFLINE TILE LAYER (IndexedDB backed)
+   ========================================================================= */
+let map, tileLayer, addPinMode=false, routePickMode=null;
+let markersLayer, routeLayer, startMarker, endMarker, startPt=null, endPt=null;
+
+function lon2tile(lon,z){ return Math.floor((lon+180)/360*Math.pow(2,z)); }
+function lat2tile(lat,z){ return Math.floor((1-Math.log(Math.tan(lat*Math.PI/180)+1/Math.cos(lat*Math.PI/180))/Math.PI)/2*Math.pow(2,z)); }
+function tile2lon(x,z){ return x/Math.pow(2,z)*360-180; }
+function tile2lat(y,z){ const n=Math.PI-2*Math.PI*y/Math.pow(2,z); return 180/Math.PI*Math.atan(0.5*(Math.exp(n)-Math.exp(-n))); }
+
+const OfflineTileLayer = L.TileLayer.extend({
+  createTile: function(coords, done){
+    const tile = document.createElement('img');
+    tile.setAttribute('role','presentation');
+    const key = coords.z+'/'+coords.x+'/'+coords.y;
+    const url = L.Util.template(OSM_TILE_TEMPLATE, Object.assign({
+      s: OSM_SUBDOMAINS[Math.abs(coords.x+coords.y)%OSM_SUBDOMAINS.length]
+    }, coords));
+    idbGetTile(key).then(blob=>{
+      if(blob){
+        tile.src = URL.createObjectURL(blob);
+        done(null, tile);
+        return;
+      }
+      if(!navigator.onLine){
+        tile.src = blankTileDataUrl();
+        done(null, tile);
+        return;
+      }
+      fetch(url).then(r=>r.blob()).then(b=>{
+        tile.src = URL.createObjectURL(b);
+        idbPutTile(key, b); // cache-as-you-browse
+        done(null, tile);
+      }).catch(()=>{
+        tile.src = blankTileDataUrl();
+        done(null, tile);
+      });
+    });
+    return tile;
+  }
+});
+let _blankTile;
+function blankTileDataUrl(){
+  if(_blankTile) return _blankTile;
+  const c = document.createElement('canvas'); c.width=256; c.height=256;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#1b2433'; ctx.fillRect(0,0,256,256);
+  ctx.strokeStyle = '#2b3546'; ctx.strokeRect(0,0,256,256);
+  ctx.fillStyle = '#5a6b85'; ctx.font='12px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('ไม่มีข้อมูลออฟไลน์', 128, 128);
+  _blankTile = c.toDataURL();
+  return _blankTile;
+}
+
+function initMapIfNeeded(){
+  if(map) return;
+  map = L.map('map', {zoomControl:true}).setView([13.7563,100.5018], 12); // default: Bangkok
+  tileLayer = new OfflineTileLayer(OSM_TILE_TEMPLATE, {maxZoom:19, attribution:'&copy; OpenStreetMap contributors'});
+  tileLayer.addTo(map);
+  markersLayer = L.layerGroup().addTo(map);
+  routeLayer = L.layerGroup().addTo(map);
+
+  navigator.geolocation && navigator.geolocation.getCurrentPosition(pos=>{
+    map.setView([pos.coords.latitude, pos.coords.longitude], 14);
+  }, ()=>{}, {timeout:4000});
+
+  map.on('click', onMapClick);
+}
+
+function onMapClick(e){
+  if(addPinMode){
+    addPinMode = false;
+    document.getElementById('addPinBtn').textContent = 'แตะแผนที่เพื่อปักหมุด';
+    openAddPlaceForm(e.latlng);
+    return;
+  }
+  if(routePickMode){
+    if(routePickMode==='start'){
+      startPt = e.latlng;
+      document.getElementById('startLabel').textContent = e.latlng.lat.toFixed(5)+', '+e.latlng.lng.toFixed(5);
+      if(startMarker) map.removeLayer(startMarker);
+      startMarker = L.marker(e.latlng,{title:'เริ่มต้น'}).addTo(routeLayer);
+    } else {
+      endPt = e.latlng;
+      document.getElementById('endLabel').textContent = e.latlng.lat.toFixed(5)+', '+e.latlng.lng.toFixed(5);
+      if(endMarker) map.removeLayer(endMarker);
+      endMarker = L.marker(e.latlng,{title:'จุดหมาย'}).addTo(routeLayer);
+    }
+    routePickMode = null;
+  }
+}
+
+/* =========================================================================
+   PLACES (pins)
+   ========================================================================= */
+function armAddPin(){
+  addPinMode = true;
+  switchTab('places');
+  document.getElementById('addPinBtn').textContent = '👉 แตะจุดบนแผนที่ตอนนี้...';
+  toast('แตะตำแหน่งบนแผนที่เพื่อปักหมุด');
+}
+
+function openAddPlaceForm(latlng){
+  const name = prompt('ชื่อสถานที่:');
+  if(!name) return;
+  const note = prompt('บันทึกเพิ่มเติม (ไม่บังคับ):') || '';
+  savePlace({name, lat:latlng.lat, lng:latlng.lng, note});
+}
+
+async function savePlace(p){
+  const localId = 'local-'+Date.now();
+  const record = {id:localId, userId:currentUser.userId, name:p.name, lat:p.lat, lng:p.lng, note:p.note, createdAt:new Date().toISOString(), updatedAt:new Date().toISOString()};
+  placesCache.push(record);
+  renderPlaces();
+  persistLocalPlaces();
+
+  if(currentUser.role==='guest'){ toast('บันทึกหมุดในเครื่อง (โหมดออฟไลน์)'); return; }
+  if(!navigator.onLine){ queueOutbox('addPlace', p); return; }
+  try{
+    const r = await apiCall('addPlace', p);
+    if(r.ok){ record.id = r.id; persistLocalPlaces(); toast('บันทึกหมุดแล้ว'); }
+    else { toast('บันทึกไม่สำเร็จ: '+r.error); }
+  }catch(e){ queueOutbox('addPlace', p); }
+}
+
+async function deletePlace(id){
+  if(!confirm('ลบหมุดนี้หรือไม่?')) return;
+  placesCache = placesCache.filter(p=>p.id!==id);
+  renderPlaces();
+  persistLocalPlaces();
+  if(currentUser.role==='guest') return;
+  if(!navigator.onLine){ queueOutbox('deletePlace', {id}); return; }
+  try{ await apiCall('deletePlace', {id}); }catch(e){ queueOutbox('deletePlace', {id}); }
+}
+
+function persistLocalPlaces(){
+  if(currentUser.role==='guest') localStorage.setItem('mapapp_guest_places', JSON.stringify(placesCache));
+  else localStorage.setItem('mapapp_places_cache', JSON.stringify(placesCache));
+}
+
+function renderPlaces(){
+  markersLayer.clearLayers();
+  const list = document.getElementById('placesList');
+  document.getElementById('placeCount').textContent = placesCache.length;
+  if(!placesCache.length){ list.innerHTML = '<p class="muted">ยังไม่มีข้อมูล</p>'; return; }
+  list.innerHTML='';
+  placesCache.forEach(p=>{
+    const lat=parseFloat(p.lat), lng=parseFloat(p.lng);
+    if(isNaN(lat)||isNaN(lng)) return;
+    L.marker([lat,lng]).addTo(markersLayer).bindPopup('<b>'+escapeHtml(p.name)+'</b><br>'+escapeHtml(p.note||''));
+    const row = document.createElement('div');
+    row.className='place-item';
+    row.innerHTML = `<div class="info"><b>${escapeHtml(p.name)}</b><span>${fmtTH(p.createdAt)}</span></div>
+      <div class="acts">
+        <button onclick="map.setView([${lat},${lng}],16)">ไป</button>
+        <button onclick="deletePlace('${p.id}')">ลบ</button>
+      </div>`;
+    list.appendChild(row);
+  });
+}
+function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* =========================================================================
+   TABS
+   ========================================================================= */
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===name));
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+}
+
+/* =========================================================================
+   INDEXEDDB (tiles + road graph for offline routing)
+   ========================================================================= */
+let _dbp;
+function idb(){
+  if(_dbp) return _dbp;
+  _dbp = new Promise((resolve,reject)=>{
+    const req = indexedDB.open('mapAppDB', 1);
+    req.onupgradeneeded = e=>{
+      const db = e.target.result;
+      if(!db.objectStoreNames.contains('tiles')) db.createObjectStore('tiles');
+      if(!db.objectStoreNames.contains('nodes')) db.createObjectStore('nodes');
+      if(!db.objectStoreNames.contains('adjacency')) db.createObjectStore('adjacency');
+      if(!db.objectStoreNames.contains('areas')) db.createObjectStore('areas', {keyPath:'id'});
+    };
+    req.onsuccess = e=>resolve(e.target.result);
+    req.onerror = e=>reject(e);
+  });
+  return _dbp;
+}
+async function idbGetTile(key){
+  const db = await idb();
+  return new Promise(res=>{
+    const tx = db.transaction('tiles','readonly');
+    const rq = tx.objectStore('tiles').get(key);
+    rq.onsuccess = ()=>res(rq.result||null);
+    rq.onerror = ()=>res(null);
+  });
+}
+async function idbPutTile(key, blob){
+  const db = await idb();
+  const tx = db.transaction('tiles','readwrite');
+  tx.objectStore('tiles').put(blob, key);
+}
+async function idbPutMany(storeName, entries){
+  const db = await idb();
+  const tx = db.transaction(storeName,'readwrite');
+  const store = tx.objectStore(storeName);
+  entries.forEach(([k,v])=>store.put(v,k));
+  return new Promise(res=>{ tx.oncomplete=res; });
+}
+async function idbGetAll(storeName){
+  const db = await idb();
+  return new Promise(res=>{
+    const tx = db.transaction(storeName,'readonly');
+    const store = tx.objectStore(storeName);
+    const out = {};
+    const req = store.openCursor();
+    req.onsuccess = e=>{
+      const cur = e.target.result;
+      if(cur){ out[cur.key]=cur.value; cur.continue(); } else res(out);
+    };
+    req.onerror = ()=>res(out);
+  });
+}
+async function idbSaveArea(area){
+  const db = await idb();
+  const tx = db.transaction('areas','readwrite');
+  tx.objectStore('areas').put(area);
+}
+async function idbListAreas(){
+  const db = await idb();
+  return new Promise(res=>{
+    const tx = db.transaction('areas','readonly');
+    const rq = tx.objectStore('areas').getAll();
+    rq.onsuccess = ()=>res(rq.result||[]);
+    rq.onerror = ()=>res([]);
+  });
+}
+
+/* =========================================================================
+   OFFLINE AREA DOWNLOAD (tiles + road graph)
+   ========================================================================= */
+async function startAreaDownload(){
+  const name = document.getElementById('areaName').value.trim() || ('พื้นที่ '+new Date().toLocaleDateString('th-TH'));
+  const [zMin,zMax] = document.getElementById('zoomRange').value.split(',').map(Number);
+  const bounds = map.getBounds();
+  const bbox = {south:bounds.getSouth(), west:bounds.getWest(), north:bounds.getNorth(), east:bounds.getEast()};
+
+  // estimate tile count first, warn if huge
+  let tileList = [];
+  for(let z=zMin; z<=zMax; z++){
+    const x1=lon2tile(bbox.west,z), x2=lon2tile(bbox.east,z);
+    const y1=lat2tile(bbox.north,z), y2=lat2tile(bbox.south,z);
+    for(let x=Math.min(x1,x2); x<=Math.max(x1,x2); x++)
+      for(let y=Math.min(y1,y2); y<=Math.max(y1,y2); y++)
+        tileList.push({z,x,y});
+  }
+  if(tileList.length > 6000){
+    if(!confirm('พื้นที่/ระดับซูมนี้มีประมาณ '+tileList.length+' ไทล์ (อาจใช้พื้นที่เก็บข้อมูลมากและใช้เวลานาน) ต้องการดำเนินการต่อหรือไม่?')) return;
+  }
+  if(!navigator.onLine){ toast('ต้องมีอินเทอร์เน็ตในการดาวน์โหลดพื้นที่'); return; }
+
+  const statusEl = document.getElementById('dlStatus');
+  const bar = document.getElementById('dlProgress');
+  statusEl.textContent = 'กำลังดาวน์โหลดไทล์แผนที่ 0/'+tileList.length;
+
+  let done=0, batch=[];
+  for(const t of tileList){
+    const key = t.z+'/'+t.x+'/'+t.y;
+    try{
+      const existing = await idbGetTile(key);
+      if(!existing){
+        const url = L.Util.template(OSM_TILE_TEMPLATE, {s:OSM_SUBDOMAINS[Math.abs(t.x+t.y)%3], z:t.z, x:t.x, y:t.y});
+        const blob = await fetch(url).then(r=>r.blob());
+        batch.push([key, blob]);
+        if(batch.length>=40){ await idbPutMany('tiles', batch); batch=[]; }
+      }
+    }catch(e){ /* skip failed tile */ }
+    done++;
+    if(done % 10 === 0 || done===tileList.length){
+      bar.style.width = Math.round(done/tileList.length*70)+'%';
+      statusEl.textContent = 'กำลังดาวน์โหลดไทล์แผนที่ '+done+'/'+tileList.length;
+    }
+  }
+  if(batch.length) await idbPutMany('tiles', batch);
+
+  // download road network graph via Overpass for offline routing
+  statusEl.textContent = 'กำลังดาวน์โหลดข้อมูลถนนสำหรับนำทางออฟไลน์...';
+  bar.style.width='80%';
+  let nodeCount=0, edgeCount=0;
+  try{
+    const q = `[out:json][timeout:60];(way["highway"]["highway"!~"footway|path|steps|cycleway|pedestrian|track|construction"](${bbox.south},${bbox.west},${bbox.north},${bbox.east}););out body;>;out skel qt;`;
+    const res = await fetch(OVERPASS_URL, {method:'POST', body:'data='+encodeURIComponent(q)});
+    const osm = await res.json();
+    const built = buildRoadGraph(osm);
+    nodeCount = Object.keys(built.nodes).length;
+    edgeCount = built.edgeCount;
+    await idbPutMany('nodes', Object.entries(built.nodes).map(([k,v])=>[k,v]));
+    await idbPutMany('adjacency', Object.entries(built.adjacency).map(([k,v])=>[k,v]));
+  }catch(e){
+    toast('ดาวน์โหลดข้อมูลถนนไม่สำเร็จ (จะยังใช้แผนที่ออฟไลน์ได้ แต่นำทางออฟไลน์อาจไม่ได้)');
+  }
+
+  bar.style.width='100%';
+  statusEl.textContent = 'เสร็จสิ้น: '+tileList.length+' ไทล์, ถนน '+nodeCount+' จุด';
+  await idbSaveArea({id:'area-'+Date.now(), name, bbox, zMin, zMax, tileCount:tileList.length, nodeCount, downloadedAt:new Date().toISOString()});
+  loadAreaList();
+  toast('ดาวน์โหลดพื้นที่ "'+name+'" เสร็จแล้ว ใช้งานออฟไลน์ได้ทันที');
+  setTimeout(()=>{ bar.style.width='0%'; statusEl.textContent=''; }, 3000);
+}
+
+async function loadAreaList(){
+  const areas = await idbListAreas();
+  const list = document.getElementById('areaList');
+  if(!areas.length){ list.innerHTML = '<p class="muted">ยังไม่มี</p>'; return; }
+  list.innerHTML='';
+  areas.forEach(a=>{
+    const div = document.createElement('div');
+    div.className='area-item';
+    div.innerHTML = `<div class="top"><b>${escapeHtml(a.name)}</b><span class="badge">ซูม ${a.zMin}-${a.zMax}</span></div>
+      <div class="muted">${a.tileCount} ไทล์ · ${a.nodeCount||0} จุดถนน · ${fmtTH(a.downloadedAt)}</div>
+      <button class="btn btn-ghost" style="margin-top:6px;" onclick='goToArea(${JSON.stringify(a.bbox)})'>ไปที่พื้นที่นี้</button>`;
+    list.appendChild(div);
+  });
+}
+function goToArea(bbox){
+  map.fitBounds([[bbox.south,bbox.west],[bbox.north,bbox.east]]);
+}
+
+/* build a simple undirected graph from Overpass JSON (highway ways) */
+function buildRoadGraph(osm){
+  const nodes = {}; // id -> {lat,lon}
+  const adjacency = {}; // id -> [[toId, dist], ...]
+  osm.elements.forEach(el=>{
+    if(el.type==='node') nodes[el.id] = {lat:el.lat, lon:el.lon};
+  });
+  let edgeCount=0;
+  osm.elements.forEach(el=>{
+    if(el.type!=='way' || !el.nodes) return;
+    for(let i=0;i<el.nodes.length-1;i++){
+      const a=el.nodes[i], b=el.nodes[i+1];
+      if(!nodes[a]||!nodes[b]) continue;
+      const d = haversine(nodes[a].lat,nodes[a].lon,nodes[b].lat,nodes[b].lon);
+      (adjacency[a]=adjacency[a]||[]).push([b,d]);
+      (adjacency[b]=adjacency[b]||[]).push([a,d]);
+      edgeCount++;
+    }
+  });
+  return {nodes, adjacency, edgeCount};
+}
+function haversine(lat1,lon1,lat2,lon2){
+  const R=6371000, toRad=x=>x*Math.PI/180;
+  const dLat=toRad(lat2-lat1), dLon=toRad(lon2-lon1);
+  const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+/* =========================================================================
+   ROUTING (online via OSRM, offline via local graph + Dijkstra)
+   ========================================================================= */
+function armRoutePick(which){
+  routePickMode = which;
+  toast(which==='start' ? 'แตะแผนที่เพื่อเลือกจุดเริ่มต้น' : 'แตะแผนที่เพื่อเลือกจุดหมาย');
+}
+function useGPS(which){
+  if(!navigator.geolocation){ toast('อุปกรณ์นี้ไม่รองรับ GPS'); return; }
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const ll = L.latLng(pos.coords.latitude,pos.coords.longitude);
+    if(which==='start'){
+      startPt = ll; document.getElementById('startLabel').textContent = ll.lat.toFixed(5)+', '+ll.lng.toFixed(5);
+      if(startMarker) map.removeLayer(startMarker);
+      startMarker = L.marker(ll,{title:'เริ่มต้น'}).addTo(routeLayer);
+    }
+    map.setView(ll, 15);
+  }, ()=>toast('ไม่สามารถเข้าถึงตำแหน่งได้'), {timeout:5000});
+}
+function clearRoute(){
+  routeLayer.clearLayers(); startPt=null; endPt=null; startMarker=null; endMarker=null;
+  document.getElementById('startLabel').textContent='ยังไม่ได้เลือก';
+  document.getElementById('endLabel').textContent='ยังไม่ได้เลือก';
+  document.getElementById('routeResult').style.display='none';
+}
+
+async function calculateRoute(){
+  if(!startPt || !endPt){ toast('กรุณาเลือกจุดเริ่มต้นและจุดหมายก่อน'); return; }
+  const resultBox = document.getElementById('routeResult');
+  const info = document.getElementById('routeInfo');
+  resultBox.style.display='block';
+  info.textContent = 'กำลังคำนวณเส้นทาง...';
+
+  if(navigator.onLine){
+    try{
+      const url = OSRM_URL+startPt.lng+','+startPt.lat+';'+endPt.lng+','+endPt.lat+'?overview=full&geometries=geojson';
+      const res = await fetch(url);
+      const data = await res.json();
+      if(data.code==='Ok' && data.routes && data.routes[0]){
+        const r = data.routes[0];
+        const latlngs = r.geometry.coordinates.map(c=>[c[1],c[0]]);
+        drawRouteLine(latlngs);
+        info.innerHTML = `<b>โหมดออนไลน์ (แม่นยำ)</b><br>ระยะทาง: ${(r.distance/1000).toFixed(2)} กม.<br>เวลาโดยประมาณ: ${Math.round(r.duration/60)} นาที`;
+        return;
+      }
+    }catch(e){ /* fall through to offline routing */ }
+  }
+  // offline fallback
+  info.textContent = 'ไม่มีเน็ต หรือคำนวณออนไลน์ไม่สำเร็จ — กำลังใช้เส้นทางออฟไลน์แบบประมาณการ...';
+  try{
+    const result = await offlineRoute(startPt, endPt);
+    if(!result){ info.textContent = 'ไม่พบเส้นทางออฟไลน์ในพื้นที่นี้ (ต้องดาวน์โหลดพื้นที่นี้ไว้ล่วงหน้าในแท็บ "ดาวน์โหลด")'; return; }
+    drawRouteLine(result.path);
+    info.innerHTML = `<b>โหมดออฟไลน์ (ประมาณการ ไม่ใช่เส้นทางที่ดีที่สุดเสมอไป)</b><br>ระยะทาง: ${(result.distance/1000).toFixed(2)} กม.`;
+  }catch(e){
+    info.textContent = 'คำนวณเส้นทางออฟไลน์ไม่สำเร็จ: '+e.message;
+  }
+}
+
+function drawRouteLine(latlngs){
+  routeLayer.eachLayer(l=>{ if(l instanceof L.Polyline) routeLayer.removeLayer(l); });
+  const line = L.polyline(latlngs, {color:'#3b82f6', weight:5, opacity:0.85}).addTo(routeLayer);
+  map.fitBounds(line.getBounds(), {padding:[30,30]});
+}
+
+// simple binary min-heap for Dijkstra
+class MinHeap{
+  constructor(){ this.a=[]; }
+  push(item){ this.a.push(item); this._up(this.a.length-1); }
+  pop(){ const top=this.a[0]; const last=this.a.pop(); if(this.a.length){ this.a[0]=last; this._down(0); } return top; }
+  get size(){ return this.a.length; }
+  _up(i){ while(i>0){ const p=(i-1)>>1; if(this.a[p][0]<=this.a[i][0]) break; [this.a[p],this.a[i]]=[this.a[i],this.a[p]]; i=p; } }
+  _down(i){ const n=this.a.length; while(true){ let s=i, l=2*i+1, r=2*i+2;
+    if(l<n && this.a[l][0]<this.a[s][0]) s=l;
+    if(r<n && this.a[r][0]<this.a[s][0]) s=r;
+    if(s===i) break; [this.a[s],this.a[i]]=[this.a[i],this.a[s]]; i=s; } }
+}
+
+async function offlineRoute(startLL, endLL){
+  const nodes = await idbGetAll('nodes');
+  const adjacency = await idbGetAll('adjacency');
+  const ids = Object.keys(nodes);
+  if(!ids.length) return null;
+
+  function nearest(ll){
+    let best=null, bestD=Infinity;
+    for(const id of ids){
+      const n = nodes[id];
+      const d = haversine(ll.lat, ll.lng, n.lat, n.lon);
+      if(d<bestD){ bestD=d; best=id; }
+    }
+    return best;
+  }
+  const startId = nearest(startLL);
+  const endId = nearest(endLL);
+  if(!startId || !endId) return null;
+
+  const dist = {}; const prev = {};
+  const heap = new MinHeap();
+  dist[startId]=0; heap.push([0,startId]);
+  const visited = new Set();
+  while(heap.size){
+    const [d,u] = heap.pop();
+    if(visited.has(u)) continue;
+    visited.add(u);
+    if(u===endId) break;
+    const neighbors = adjacency[u]||[];
+    for(const [v,w] of neighbors){
+      const nd = d+w;
+      if(dist[v]===undefined || nd<dist[v]){ dist[v]=nd; prev[v]=u; heap.push([nd,v]); }
+    }
+  }
+  if(dist[endId]===undefined) return null;
+  const path=[]; let cur=endId;
+  while(cur!==undefined){ path.unshift(cur); cur=prev[cur]; }
+  const latlngs = path.map(id=>[nodes[id].lat, nodes[id].lon]);
+  return {path:latlngs, distance:dist[endId]};
+}
+
+/* =========================================================================
+   BOOT
+   ========================================================================= */
+function boot(){
+  updateStatusPill();
+  if(!SCRIPT_URL){
+    document.getElementById('configScreen').style.display='flex';
+    return;
+  }
+  document.getElementById('configScreen').style.display='none';
+  if(currentUser){ enterApp(); }
+  else { document.getElementById('authScreen').style.display='flex'; }
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('./sw.js').catch(()=>{});
+  }
+  setInterval(flushOutbox, 15000);
+}
+boot();
+</script>
+</body>
+</html>
