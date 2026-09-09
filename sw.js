@@ -17,9 +17,14 @@ self.addEventListener('install', function (event) {
   // person gets a chance to see the "update available" banner first.
   event.waitUntil(
     caches.open(SHELL_CACHE).then(function (cache) {
-      return cache.addAll(SHELL_FILES).catch(function () {
-        // ignore individual failures (e.g. offline on first install)
-      });
+      // cache.addAll() is all-or-nothing — if even one URL fails (e.g. a
+      // brief CDN hiccup), NOTHING gets cached. Cache each file separately
+      // instead so a single failure doesn't cost us the whole app shell.
+      return Promise.all(
+        SHELL_FILES.map(function (url) {
+          return cache.add(url).catch(function () { /* skip this one, keep the rest */ });
+        })
+      );
     })
   );
 });

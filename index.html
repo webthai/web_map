@@ -7,6 +7,11 @@
 <link rel="manifest" href="data:application/manifest+json,{%22name%22:%22Offline%20Map%22,%22start_url%22:%22.%2F%22,%22display%22:%22standalone%22,%22background_color%22:%22%23111827%22,%22theme_color%22:%22%23111827%22,%22icons%22:[{%22src%22:%221.png%22,%22sizes%22:%22512x512%22,%22type%22:%22image%2Fpng%22}]}">
 <link rel="icon" type="image/png" href="1.png">
 <link rel="apple-touch-icon" href="1.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="แผนที่ออฟไลน์">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#111827">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   :root{
@@ -289,8 +294,7 @@
 const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzZ2ZfW51dZ_GC3c4C3_tou2279046t_kkZm08xDPJBvy9pPHfQgnS1oTtbQ7JhmltMZg/exec";
 
 const TZ = 'Asia/Bangkok';
-const OSM_TILE_TEMPLATE = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-const OSM_SUBDOMAINS = ['a','b','c'];
+const OSM_TILE_TEMPLATE = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'; // single official host per OSM tile usage policy — do not shard subdomains
 const OSRM_URL = 'https://router.project-osrm.org/route/v1/driving/';
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
 
@@ -464,9 +468,7 @@ const OfflineTileLayer = L.TileLayer.extend({
     const tile = document.createElement('img');
     tile.setAttribute('role','presentation');
     const key = coords.z+'/'+coords.x+'/'+coords.y;
-    const url = L.Util.template(OSM_TILE_TEMPLATE, Object.assign({
-      s: OSM_SUBDOMAINS[Math.abs(coords.x+coords.y)%OSM_SUBDOMAINS.length]
-    }, coords));
+    const url = L.Util.template(OSM_TILE_TEMPLATE, coords);
     idbGetTile(key).then(blob=>{
       if(blob){
         tile.src = URL.createObjectURL(blob);
@@ -946,7 +948,7 @@ async function startAreaDownload(){
     try{
       const existing = await idbGetTile(key);
       if(!existing){
-        const url = L.Util.template(OSM_TILE_TEMPLATE, {s:OSM_SUBDOMAINS[Math.abs(t.x+t.y)%3], z:t.z, x:t.x, y:t.y});
+        const url = L.Util.template(OSM_TILE_TEMPLATE, {z:t.z, x:t.x, y:t.y});
         const blob = await fetch(url).then(r=>r.blob());
         batch.push([key, blob]);
         if(batch.length>=40){ await idbPutMany('tiles', batch); batch=[]; }
