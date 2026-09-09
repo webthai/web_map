@@ -89,6 +89,28 @@
 
   .leaflet-marker-icon.mine{filter:hue-rotate(120deg);}
 
+  /* ---------- modal (add/edit place) ---------- */
+  .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:4000;align-items:center;justify-content:center;padding:16px;}
+  .modal-overlay.show{display:flex;}
+  .modal-box{width:100%;max-width:360px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;}
+  .modal-box h3{margin:0 0 10px;font-size:16px;}
+
+  /* ---------- floating locate button ---------- */
+  #locateBtn{position:absolute;right:14px;bottom:14px;width:46px;height:46px;border-radius:50%;background:var(--panel2);border:1px solid var(--line);color:var(--text);font-size:20px;z-index:900;box-shadow:0 4px 14px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;}
+  #locateBtn:active{background:var(--accent2);}
+
+  /* ---------- update banner ---------- */
+  #updateBanner{display:none;position:fixed;top:8px;left:50%;transform:translateX(-50%);background:var(--accent2);color:#fff;padding:9px 14px;border-radius:9px;font-size:13px;z-index:6000;box-shadow:0 4px 16px rgba(0,0,0,.4);align-items:center;gap:10px;}
+  #updateBanner.show{display:flex;}
+  #updateBanner button{background:#fff;color:var(--accent2);border:none;border-radius:6px;padding:5px 10px;font-size:12px;font-weight:600;}
+
+  /* ---------- route steps ---------- */
+  .step-item{display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px;}
+  .step-item:last-child{border-bottom:none;}
+  .step-item .n{flex:0 0 auto;width:20px;height:20px;border-radius:50%;background:var(--accent2);color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center;}
+
+  .badge.category{background:#0b1220;}
+
   /* ---------- mobile ---------- */
   @media (max-width:720px){
     #panel{position:fixed;left:0;right:0;bottom:0;top:auto;width:auto;height:46%;border-left:none;border-top:1px solid var(--line);border-radius:16px 16px 0 0;box-shadow:0 -6px 24px rgba(0,0,0,.4);padding-bottom:env(safe-area-inset-bottom);}
@@ -137,6 +159,7 @@
   </div>
   <div id="main">
     <div id="map"></div>
+    <button id="locateBtn" onclick="locateMe()" title="ตำแหน่งของฉัน">📍</button>
     <div id="panel">
       <div id="tabs">
         <button class="tab active" data-tab="places" onclick="switchTab('places')">📍 หมุด</button>
@@ -158,6 +181,13 @@
           <div class="card">
             <h3>สถานที่ที่บันทึกไว้ (<span id="placeCount">0</span>)</h3>
             <div id="placesList"><p class="muted">ยังไม่มีข้อมูล</p></div>
+          </div>
+          <div class="card">
+            <h3>สำรอง/ย้ายข้อมูลหมุด</h3>
+            <div class="row">
+              <button class="btn btn-ghost" onclick="exportPlaces()">ส่งออกเป็นไฟล์</button>
+              <button class="btn btn-ghost" onclick="document.getElementById('importFileInput').click()">นำเข้าจากไฟล์</button>
+            </div>
           </div>
         </div>
 
@@ -187,6 +217,12 @@
         <!-- OFFLINE TAB -->
         <div class="section" id="tab-offline">
           <div class="card">
+            <h3>พื้นที่เก็บข้อมูลในเครื่อง</h3>
+            <div class="progress-wrap"><div class="progress-bar" id="storageBar"></div></div>
+            <div class="muted" id="storageText">กำลังตรวจสอบ...</div>
+            <button class="btn btn-danger" onclick="clearAllOfflineData()">ล้างข้อมูลออฟไลน์ทั้งหมด</button>
+          </div>
+          <div class="card">
             <h3>ดาวน์โหลดพื้นที่ที่เห็นในจอ</h3>
             <p class="muted">แนะนำ: ซูมแผนที่ให้อยู่ในระดับ "อำเภอ/ตำบล" ก่อนกดดาวน์โหลด ยิ่งพื้นที่กว้างยิ่งใช้พื้นที่เก็บข้อมูลมาก</p>
             <label>ชื่อพื้นที่</label>
@@ -213,6 +249,35 @@
 </div>
 
 <div id="toastHost"></div>
+
+<div id="updateBanner">
+  <span>มีอัปเดตเวอร์ชันใหม่ของแอป</span>
+  <button onclick="applyUpdate()">อัปเดตตอนนี้</button>
+</div>
+
+<!-- ================= ADD/EDIT PLACE MODAL ================= -->
+<div class="modal-overlay" id="placeModal">
+  <div class="modal-box">
+    <h3 id="placeModalTitle">เพิ่มหมุดใหม่</h3>
+    <label>ชื่อสถานที่</label>
+    <input type="text" id="pmName" placeholder="เช่น บ้านคุณยาย">
+    <label>หมวดหมู่</label>
+    <select id="pmCategory">
+      <option value="other">📍 อื่นๆ</option>
+      <option value="home">🏠 บ้าน</option>
+      <option value="work">💼 ที่ทำงาน</option>
+      <option value="food">🍽️ ร้านอาหาร</option>
+    </select>
+    <label>โน้ตเพิ่มเติม (ไม่บังคับ)</label>
+    <textarea id="pmNote"></textarea>
+    <div class="row">
+      <button class="btn btn-ghost" onclick="closePlaceModal()">ยกเลิก</button>
+      <button class="btn btn-primary" onclick="submitPlaceModal()">บันทึก</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="importFileInput" accept="application/json" style="display:none;" onchange="handleImportFile(event)">
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
@@ -484,8 +549,25 @@ function onMapClick(e){
 }
 
 /* =========================================================================
-   PLACES (pins)
+   PLACES (pins) — add/edit modal, category icons, export/import
    ========================================================================= */
+const CATEGORY_META = {
+  other:{emoji:'📍',color:'#22c55e',label:'อื่นๆ'},
+  home: {emoji:'🏠',color:'#f59e0b',label:'บ้าน'},
+  work: {emoji:'💼',color:'#3b82f6',label:'ที่ทำงาน'},
+  food: {emoji:'🍽️',color:'#ef4444',label:'ร้านอาหาร'}
+};
+function categoryIcon(category){
+  const m = CATEGORY_META[category] || CATEGORY_META.other;
+  return L.divIcon({
+    className:'',
+    html:`<div style="background:${m.color};width:30px;height:30px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.45);border:2px solid #0f172a;">
+            <span style="transform:rotate(45deg);font-size:14px;">${m.emoji}</span>
+          </div>`,
+    iconSize:[30,30], iconAnchor:[15,30], popupAnchor:[0,-28]
+  });
+}
+
 function armAddPin(){
   addPinMode = true;
   switchTab('places');
@@ -493,16 +575,50 @@ function armAddPin(){
   toast('แตะตำแหน่งบนแผนที่เพื่อปักหมุด');
 }
 
+let pmMode = 'add'; // 'add' | 'edit'
+let pmLatLng = null;
+let pmEditId = null;
+
 function openAddPlaceForm(latlng){
-  const name = prompt('ชื่อสถานที่:');
-  if(!name) return;
-  const note = prompt('บันทึกเพิ่มเติม (ไม่บังคับ):') || '';
-  savePlace({name, lat:latlng.lat, lng:latlng.lng, note});
+  pmMode = 'add'; pmLatLng = latlng; pmEditId = null;
+  document.getElementById('placeModalTitle').textContent = 'เพิ่มหมุดใหม่';
+  document.getElementById('pmName').value = '';
+  document.getElementById('pmCategory').value = 'other';
+  document.getElementById('pmNote').value = '';
+  document.getElementById('placeModal').classList.add('show');
+}
+
+function editPlace(id){
+  const p = placesCache.find(x=>x.id===id);
+  if(!p) return;
+  pmMode = 'edit'; pmEditId = id; pmLatLng = null;
+  document.getElementById('placeModalTitle').textContent = 'แก้ไขหมุด';
+  document.getElementById('pmName').value = p.name || '';
+  document.getElementById('pmCategory').value = p.category || 'other';
+  document.getElementById('pmNote').value = p.note || '';
+  document.getElementById('placeModal').classList.add('show');
+}
+
+function closePlaceModal(){
+  document.getElementById('placeModal').classList.remove('show');
+}
+
+function submitPlaceModal(){
+  const name = document.getElementById('pmName').value.trim();
+  const category = document.getElementById('pmCategory').value;
+  const note = document.getElementById('pmNote').value.trim();
+  if(!name){ toast('กรุณาใส่ชื่อสถานที่'); return; }
+  closePlaceModal();
+  if(pmMode==='add'){
+    savePlace({name, lat:pmLatLng.lat, lng:pmLatLng.lng, note, category});
+  } else {
+    updatePlaceLocal(pmEditId, {name, note, category});
+  }
 }
 
 async function savePlace(p){
   const localId = 'local-'+Date.now();
-  const record = {id:localId, name:p.name, lat:p.lat, lng:p.lng, note:p.note, createdAt:new Date().toISOString(), updatedAt:new Date().toISOString()};
+  const record = {id:localId, name:p.name, lat:p.lat, lng:p.lng, note:p.note, category:p.category||'other', createdAt:new Date().toISOString(), updatedAt:new Date().toISOString()};
   placesCache.push(record);
   renderPlaces();
   persistLocalPlaces();
@@ -513,6 +629,22 @@ async function savePlace(p){
     if(r.ok){ record.id = r.id; persistLocalPlaces(); toast('บันทึกหมุดแล้ว'); }
     else { toast('บันทึกไม่สำเร็จ: '+r.error); }
   }catch(e){ queueOutbox('addPlace', p); }
+}
+
+async function updatePlaceLocal(id, changes){
+  const rec = placesCache.find(p=>p.id===id);
+  if(!rec) return;
+  Object.assign(rec, changes, {updatedAt:new Date().toISOString()});
+  renderPlaces();
+  persistLocalPlaces();
+
+  const payload = Object.assign({id}, changes);
+  if(!navigator.onLine){ queueOutbox('updatePlace', payload); return; }
+  try{
+    const r = await apiCall('updatePlace', payload);
+    if(r.ok) toast('บันทึกการแก้ไขแล้ว');
+    else toast('บันทึกไม่สำเร็จ: '+r.error);
+  }catch(e){ queueOutbox('updatePlace', payload); }
 }
 
 async function deletePlace(id){
@@ -537,18 +669,55 @@ function renderPlaces(){
   placesCache.forEach(p=>{
     const lat=parseFloat(p.lat), lng=parseFloat(p.lng);
     if(isNaN(lat)||isNaN(lng)) return;
-    L.marker([lat,lng]).addTo(markersLayer).bindPopup('<b>'+escapeHtml(p.name)+'</b><br>'+escapeHtml(p.note||''));
+    const meta = CATEGORY_META[p.category] || CATEGORY_META.other;
+    L.marker([lat,lng], {icon:categoryIcon(p.category)}).addTo(markersLayer)
+      .bindPopup('<b>'+escapeHtml(p.name)+'</b><br>'+escapeHtml(p.note||''));
     const row = document.createElement('div');
     row.className='place-item';
-    row.innerHTML = `<div class="info"><b>${escapeHtml(p.name)}</b><span>${fmtTH(p.createdAt)}</span></div>
+    row.innerHTML = `<div class="info"><b>${meta.emoji} ${escapeHtml(p.name)}</b><span>${fmtTH(p.createdAt)}</span></div>
       <div class="acts">
         <button onclick="map.setView([${lat},${lng}],16)">ไป</button>
+        <button onclick="editPlace('${p.id}')">แก้ไข</button>
         <button onclick="deletePlace('${p.id}')">ลบ</button>
       </div>`;
     list.appendChild(row);
   });
 }
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ---------- export / import ---------- */
+function exportPlaces(){
+  if(!placesCache.length){ toast('ยังไม่มีหมุดให้ส่งออก'); return; }
+  const blob = new Blob([JSON.stringify(placesCache, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const dateStr = new Date().toLocaleDateString('th-TH', {timeZone:TZ}).replace(/\//g,'-');
+  a.href = url; a.download = 'places-backup-'+dateStr+'.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  toast('ส่งออกไฟล์แล้ว');
+}
+
+async function handleImportFile(event){
+  const file = event.target.files[0];
+  event.target.value = '';
+  if(!file) return;
+  try{
+    const text = await file.text();
+    const arr = JSON.parse(text);
+    if(!Array.isArray(arr)) throw new Error('รูปแบบไฟล์ไม่ถูกต้อง');
+    let count = 0;
+    for(const p of arr){
+      const lat = parseFloat(p.lat), lng = parseFloat(p.lng);
+      if(!p.name || isNaN(lat) || isNaN(lng)) continue;
+      await savePlace({name:p.name, lat, lng, note:p.note||'', category:p.category||'other'});
+      count++;
+    }
+    toast('นำเข้าหมุดสำเร็จ '+count+' รายการ');
+  }catch(e){
+    toast('นำเข้าไฟล์ไม่สำเร็จ: '+e.message);
+  }
+}
 
 /* =========================================================================
    SEARCH BAR (below the tab menu) — filters saved places + online geocoding
@@ -621,6 +790,7 @@ function switchTab(name){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===name));
   document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
+  if(name==='offline') showStorageUsage();
 }
 
 /* =========================================================================
@@ -692,6 +862,56 @@ async function idbListAreas(){
     rq.onerror = ()=>res([]);
   });
 }
+async function idbDeleteMany(storeName, keys){
+  const db = await idb();
+  const tx = db.transaction(storeName,'readwrite');
+  const store = tx.objectStore(storeName);
+  keys.forEach(k=>store.delete(k));
+  return new Promise(res=>{ tx.oncomplete=res; });
+}
+async function idbDeleteRecord(storeName, key){
+  const db = await idb();
+  const tx = db.transaction(storeName,'readwrite');
+  tx.objectStore(storeName).delete(key);
+  return new Promise(res=>{ tx.oncomplete=res; });
+}
+async function idbClearStore(storeName){
+  const db = await idb();
+  const tx = db.transaction(storeName,'readwrite');
+  tx.objectStore(storeName).clear();
+  return new Promise(res=>{ tx.oncomplete=res; });
+}
+
+/* ---------- storage usage indicator ---------- */
+async function showStorageUsage(){
+  const bar = document.getElementById('storageBar');
+  const text = document.getElementById('storageText');
+  if(!bar || !text) return;
+  if(navigator.storage && navigator.storage.estimate){
+    try{
+      const est = await navigator.storage.estimate();
+      const usedMB = (est.usage/1024/1024).toFixed(1);
+      const quotaMB = (est.quota/1024/1024).toFixed(0);
+      const pct = est.quota ? Math.min(100, Math.round(est.usage/est.quota*100)) : 0;
+      bar.style.width = pct+'%';
+      bar.style.background = pct>85 ? 'var(--danger)' : (pct>60 ? 'var(--warn)' : 'var(--accent2)');
+      text.textContent = 'ใช้ไป '+usedMB+' MB จาก '+quotaMB+' MB ('+pct+'%)';
+    }catch(e){ text.textContent = 'ไม่สามารถตรวจสอบพื้นที่เก็บข้อมูลได้'; }
+  } else {
+    text.textContent = 'เบราว์เซอร์นี้ไม่รองรับการตรวจสอบพื้นที่เก็บข้อมูล';
+  }
+}
+
+async function clearAllOfflineData(){
+  if(!confirm('ล้างแผนที่และข้อมูลถนนออฟไลน์ทั้งหมดที่ดาวน์โหลดไว้หรือไม่? (หมุดที่บันทึกไว้จะไม่หาย)')) return;
+  await idbClearStore('tiles');
+  await idbClearStore('nodes');
+  await idbClearStore('adjacency');
+  await idbClearStore('areas');
+  loadAreaList();
+  showStorageUsage();
+  toast('ล้างข้อมูลออฟไลน์ทั้งหมดแล้ว');
+}
 
 /* =========================================================================
    OFFLINE AREA DOWNLOAD (tiles + road graph)
@@ -761,6 +981,7 @@ async function startAreaDownload(){
   statusEl.textContent = 'เสร็จสิ้น: '+tileList.length+' ไทล์, ถนน '+nodeCount+' จุด';
   await idbSaveArea({id:'area-'+Date.now(), name, bbox, zMin, zMax, tileCount:tileList.length, nodeCount, downloadedAt:new Date().toISOString()});
   loadAreaList();
+  showStorageUsage();
   toast('ดาวน์โหลดพื้นที่ "'+name+'" เสร็จแล้ว ใช้งานออฟไลน์ได้ทันที');
   setTimeout(()=>{ bar.style.width='0%'; statusEl.textContent=''; }, 3000);
 }
@@ -775,12 +996,35 @@ async function loadAreaList(){
     div.className='area-item';
     div.innerHTML = `<div class="top"><b>${escapeHtml(a.name)}</b><span class="badge">ซูม ${a.zMin}-${a.zMax}</span></div>
       <div class="muted">${a.tileCount} ไทล์ · ${a.nodeCount||0} จุดถนน · ${fmtTH(a.downloadedAt)}</div>
-      <button class="btn btn-ghost" style="margin-top:6px;" onclick='goToArea(${JSON.stringify(a.bbox)})'>ไปที่พื้นที่นี้</button>`;
+      <div class="row">
+        <button class="btn btn-ghost" onclick='goToArea(${JSON.stringify(a.bbox)})'>ไปที่พื้นที่นี้</button>
+        <button class="btn btn-danger" onclick="deleteArea('${a.id}')">ลบพื้นที่นี้</button>
+      </div>`;
     list.appendChild(div);
   });
 }
 function goToArea(bbox){
   map.fitBounds([[bbox.south,bbox.west],[bbox.north,bbox.east]]);
+}
+
+async function deleteArea(areaId){
+  const areas = await idbListAreas();
+  const area = areas.find(a=>a.id===areaId);
+  if(!area) return;
+  if(!confirm('ลบไทล์แผนที่ของพื้นที่ "'+area.name+'" ออกจากเครื่องนี้หรือไม่? (ข้อมูลถนนสำหรับนำทางออฟไลน์ที่แชร์กับพื้นที่อื่นจะยังคงอยู่)')) return;
+  let keys = [];
+  for(let z=area.zMin; z<=area.zMax; z++){
+    const x1=lon2tile(area.bbox.west,z), x2=lon2tile(area.bbox.east,z);
+    const y1=lat2tile(area.bbox.north,z), y2=lat2tile(area.bbox.south,z);
+    for(let x=Math.min(x1,x2); x<=Math.max(x1,x2); x++)
+      for(let y=Math.min(y1,y2); y<=Math.max(y1,y2); y++)
+        keys.push(z+'/'+x+'/'+y);
+  }
+  await idbDeleteMany('tiles', keys);
+  await idbDeleteRecord('areas', areaId);
+  loadAreaList();
+  showStorageUsage();
+  toast('ลบพื้นที่ "'+area.name+'" แล้ว');
 }
 
 /* build a simple undirected graph from Overpass JSON (highway ways) */
@@ -830,6 +1074,38 @@ function useGPS(which){
     map.setView(ll, 15);
   }, ()=>toast('ไม่สามารถเข้าถึงตำแหน่งได้'), {timeout:5000});
 }
+
+/* ---------- floating "my location" button (always available on the map) ---------- */
+let myLocationMarker = null;
+function locateMe(){
+  if(!navigator.geolocation){ toast('อุปกรณ์นี้ไม่รองรับ GPS'); return; }
+  toast('กำลังค้นหาตำแหน่ง...');
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const ll = L.latLng(pos.coords.latitude, pos.coords.longitude);
+    if(myLocationMarker) map.removeLayer(myLocationMarker);
+    myLocationMarker = L.circleMarker(ll, {radius:9, color:'#fff', weight:2, fillColor:'#3b82f6', fillOpacity:1}).addTo(map);
+    map.setView(ll, 16);
+  }, ()=>toast('ไม่สามารถเข้าถึงตำแหน่งได้ — ตรวจสอบว่าอนุญาตให้เข้าถึงตำแหน่งแล้ว'), {timeout:6000, enableHighAccuracy:true});
+}
+
+/* ---------- turn-by-turn instruction text (Thai, built from OSRM maneuver data) ---------- */
+function stepInstructionTH(step){
+  const m = step.maneuver || {};
+  const type = m.type, modifier = m.modifier;
+  const road = step.name ? ('บน'+step.name) : '';
+  const modifierTH = {
+    'left':'เลี้ยวซ้าย', 'right':'เลี้ยวขวา', 'straight':'ตรงไป',
+    'slight left':'เบี่ยงซ้ายเล็กน้อย', 'slight right':'เบี่ยงขวาเล็กน้อย',
+    'sharp left':'เลี้ยวซ้ายหักศอก', 'sharp right':'เลี้ยวขวาหักศอก', 'uturn':'กลับรถ'
+  };
+  if(type==='depart') return 'เริ่มต้นออกเดินทาง '+road;
+  if(type==='arrive') return 'ถึงจุดหมาย';
+  if(type==='roundabout' || type==='rotary') return 'เข้าวงเวียนแล้วออกทางที่ '+(m.exit||1)+' '+road;
+  if(type==='turn' || type==='new name' || type==='end of road' || type==='fork') {
+    return (modifierTH[modifier] || 'ไปตามเส้นทาง') + ' ' + road;
+  }
+  return 'ไปตามเส้นทาง ' + road;
+}
 function clearRoute(){
   routeLayer.clearLayers(); startPt=null; endPt=null; startMarker=null; endMarker=null;
   document.getElementById('startLabel').textContent='ยังไม่ได้เลือก';
@@ -846,14 +1122,20 @@ async function calculateRoute(){
 
   if(navigator.onLine){
     try{
-      const url = OSRM_URL+startPt.lng+','+startPt.lat+';'+endPt.lng+','+endPt.lat+'?overview=full&geometries=geojson';
+      const url = OSRM_URL+startPt.lng+','+startPt.lat+';'+endPt.lng+','+endPt.lat+'?overview=full&geometries=geojson&steps=true';
       const res = await fetch(url);
       const data = await res.json();
       if(data.code==='Ok' && data.routes && data.routes[0]){
         const r = data.routes[0];
         const latlngs = r.geometry.coordinates.map(c=>[c[1],c[0]]);
         drawRouteLine(latlngs);
-        info.innerHTML = `<b>โหมดออนไลน์ (แม่นยำ)</b><br>ระยะทาง: ${(r.distance/1000).toFixed(2)} กม.<br>เวลาโดยประมาณ: ${Math.round(r.duration/60)} นาที`;
+        let stepsHtml = '';
+        if(r.legs && r.legs[0] && r.legs[0].steps){
+          stepsHtml = '<div style="margin-top:10px;">' + r.legs[0].steps.map((s,i)=>
+            `<div class="step-item"><div class="n">${i+1}</div><div>${escapeHtml(stepInstructionTH(s))}${s.distance>10 ? ' · '+Math.round(s.distance)+' ม.' : ''}</div></div>`
+          ).join('') + '</div>';
+        }
+        info.innerHTML = `<b>โหมดออนไลน์ (แม่นยำ)</b><br>ระยะทาง: ${(r.distance/1000).toFixed(2)} กม.<br>เวลาโดยประมาณ: ${Math.round(r.duration/60)} นาที` + stepsHtml;
         return;
       }
     }catch(e){ /* fall through to offline routing */ }
@@ -942,12 +1224,45 @@ function boot(){
   document.getElementById('configScreen').style.display='none';
   if(currentUser){ enterApp(); }
   else { document.getElementById('authScreen').style.display='flex'; }
-  if('serviceWorker' in navigator){
-    navigator.serviceWorker.register('./sw.js').catch(()=>{});
-  }
+  registerServiceWorkerWithUpdateCheck();
   setInterval(flushOutbox, 15000);
 }
 boot();
+
+/* =========================================================================
+   APP UPDATE NOTIFICATION (service worker waiting -> banner -> user confirms)
+   ========================================================================= */
+let waitingWorker = null;
+function registerServiceWorkerWithUpdateCheck(){
+  if(!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.register('./sw.js').then(reg=>{
+    if(reg.waiting){ waitingWorker = reg.waiting; showUpdateBanner(); }
+    reg.addEventListener('updatefound', ()=>{
+      const nw = reg.installing;
+      if(!nw) return;
+      nw.addEventListener('statechange', ()=>{
+        if(nw.state==='installed' && navigator.serviceWorker.controller){
+          waitingWorker = nw;
+          showUpdateBanner();
+        }
+      });
+    });
+  }).catch(()=>{});
+
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+    if(reloaded) return;
+    reloaded = true;
+    window.location.reload();
+  });
+}
+function showUpdateBanner(){
+  document.getElementById('updateBanner').classList.add('show');
+}
+function applyUpdate(){
+  if(waitingWorker) waitingWorker.postMessage({type:'SKIP_WAITING'});
+  document.getElementById('updateBanner').classList.remove('show');
+}
 </script>
 </body>
 </html>

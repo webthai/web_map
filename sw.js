@@ -2,7 +2,7 @@
 // NOTE: map tiles and routing graph data are cached separately in IndexedDB
 // (handled inside index.html), not here — this only caches the app shell.
 
-var SHELL_CACHE = 'map-app-shell-v1';
+var SHELL_CACHE = 'map-app-shell-v2';
 var SHELL_FILES = [
   './',
   './index.html',
@@ -12,7 +12,9 @@ var SHELL_FILES = [
 ];
 
 self.addEventListener('install', function (event) {
-  self.skipWaiting();
+  // NOTE: no self.skipWaiting() here on purpose — the new worker waits until
+  // the page (via applyUpdate() in index.html) tells it to take over, so the
+  // person gets a chance to see the "update available" banner first.
   event.waitUntil(
     caches.open(SHELL_CACHE).then(function (cache) {
       return cache.addAll(SHELL_FILES).catch(function () {
@@ -20,6 +22,12 @@ self.addEventListener('install', function (event) {
       });
     })
   );
+});
+
+self.addEventListener('message', function (event) {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('activate', function (event) {
