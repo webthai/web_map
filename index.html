@@ -116,6 +116,16 @@
 
   .badge.category{background:#0b1220;}
 
+  /* ---------- top loading progress bar ---------- */
+  #loadingBar{position:fixed;top:0;left:0;height:3px;background:var(--accent2);width:0;z-index:7000;transition:width .3s ease, opacity .3s ease;opacity:0;}
+  #loadingBar.active{opacity:1;width:70%;}
+
+  /* ---------- add-to-homescreen reminder banner ---------- */
+  #a2hsBanner{display:none;background:var(--panel2);border-bottom:1px solid var(--line);color:var(--text);font-size:12px;padding:8px 12px;align-items:center;justify-content:space-between;gap:10px;}
+  #a2hsBanner.show{display:flex;}
+  #a2hsBanner span{line-height:1.4;}
+  #a2hsBanner button{background:none;border:none;color:var(--muted);font-size:16px;padding:0 4px;flex:0 0 auto;}
+
   /* ---------- mobile ---------- */
   @media (max-width:720px){
     #panel{position:fixed;left:0;right:0;bottom:0;top:auto;width:auto;height:46%;border-left:none;border-top:1px solid var(--line);border-radius:16px 16px 0 0;box-shadow:0 -6px 24px rgba(0,0,0,.4);padding-bottom:env(safe-area-inset-bottom);}
@@ -153,8 +163,14 @@
   </div>
 </div>
 
+<div id="loadingBar"></div>
+
 <!-- ================= MAIN APP ================= -->
 <div id="app">
+  <div id="a2hsBanner">
+    <span>📲 เพิ่มแอปนี้ไปหน้าจอโฮมเพื่อให้ข้อมูลออฟไลน์อยู่ถาวร (แตะปุ่มแชร์ 🔺 แล้วเลือก "เพิ่มไปยังหน้าจอโฮม")</span>
+    <button onclick="dismissA2HS()">✕</button>
+  </div>
   <div id="topbar">
     <h1>🗺️ แผนที่ออฟไลน์</h1>
     <div id="statusPill"><div id="statusDot"></div><span id="statusText">ออฟไลน์</span></div>
@@ -185,7 +201,7 @@
           </div>
           <div class="card">
             <h3>สถานที่ที่บันทึกไว้ (<span id="placeCount">0</span>)</h3>
-            <div id="placesList"><p class="muted">ยังไม่มีข้อมูล</p></div>
+            <div id="placesList"><p class="muted">กำลังโหลดหมุดที่บันทึกไว้...</p></div>
           </div>
           <div class="card">
             <h3>สำรอง/ย้ายข้อมูลหมุด</h3>
@@ -427,6 +443,21 @@ function enterApp(){
   initMapIfNeeded();
   loadBootstrap();
   loadAreaList();
+  maybeShowA2HS();
+}
+
+/* ---------- add-to-homescreen reminder (iOS Safari has no native install prompt) ---------- */
+function maybeShowA2HS(){
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const isStandalone = window.navigator.standalone === true ||
+    (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+  if(isIOS && !isStandalone && !localStorage.getItem('mapapp_a2hs_dismissed')){
+    document.getElementById('a2hsBanner').classList.add('show');
+  }
+}
+function dismissA2HS(){
+  document.getElementById('a2hsBanner').classList.remove('show');
+  localStorage.setItem('mapapp_a2hs_dismissed', '1');
 }
 
 /* =========================================================================
@@ -434,9 +465,11 @@ function enterApp(){
    ========================================================================= */
 let placesCache = [];
 async function loadBootstrap(){
+  showLoadingBar();
   if(!navigator.onLine){
     placesCache = JSON.parse(localStorage.getItem('mapapp_places_cache')||'[]');
     renderPlaces();
+    hideLoadingBar();
     return;
   }
   try{
@@ -449,7 +482,16 @@ async function loadBootstrap(){
   }catch(e){
     placesCache = JSON.parse(localStorage.getItem('mapapp_places_cache')||'[]');
     renderPlaces();
+  }finally{
+    hideLoadingBar();
   }
+}
+
+function showLoadingBar(){ document.getElementById('loadingBar').classList.add('active'); }
+function hideLoadingBar(){
+  const el = document.getElementById('loadingBar');
+  el.style.width='100%';
+  setTimeout(()=>{ el.classList.remove('active'); el.style.width='0'; }, 300);
 }
 
 /* =========================================================================
@@ -760,6 +802,10 @@ function renderSearchResults(localMatches, geoResults){
     html += `<div class="search-item" onclick='searchGoTo(${r.lat},${r.lon},false)'>
       🌐 ${escapeHtml(r.display_name)}<span class="tag">ผลค้นหาออนไลน์</span></div>`;
   });
+  if(geoResults.length){
+    // Nominatim usage policy requires attribution wherever its results are shown
+    html += `<div style="padding:6px 12px;font-size:10px;color:var(--muted);border-top:1px solid var(--line);">ผลค้นหาโดย © OpenStreetMap contributors</div>`;
+  }
   box.innerHTML = html;
   box.classList.add('show');
 }
@@ -963,20 +1009,30 @@ async function startAreaDownload(){
   if(batch.length) await idbPutMany('tiles', batch);
 
   // download road network graph via Overpass for offline routing
-  statusEl.textContent = 'กำลังดาวน์โหลดข้อมูลถนนสำหรับนำทางออฟไลน์...';
-  bar.style.width='80%';
+  const areaKm2 = bboxAreaKm2(bbox);
   let nodeCount=0, edgeCount=0;
-  try{
-    const q = `[out:json][timeout:60];(way["highway"]["highway"!~"footway|path|steps|cycleway|pedestrian|track|construction"](${bbox.south},${bbox.west},${bbox.north},${bbox.east}););out body;>;out skel qt;`;
-    const res = await fetch(OVERPASS_URL, {method:'POST', body:'data='+encodeURIComponent(q)});
-    const osm = await res.json();
-    const built = buildRoadGraph(osm);
-    nodeCount = Object.keys(built.nodes).length;
-    edgeCount = built.edgeCount;
-    await idbPutMany('nodes', Object.entries(built.nodes).map(([k,v])=>[k,v]));
-    await idbPutMany('adjacency', Object.entries(built.adjacency).map(([k,v])=>[k,v]));
-  }catch(e){
-    toast('ดาวน์โหลดข้อมูลถนนไม่สำเร็จ (จะยังใช้แผนที่ออฟไลน์ได้ แต่นำทางออฟไลน์อาจไม่ได้)');
+  let skipRoads = false;
+  if(areaKm2 > 500){
+    skipRoads = !confirm('พื้นที่นี้กว้างประมาณ '+Math.round(areaKm2)+' ตร.กม. การดาวน์โหลดข้อมูลถนนสำหรับนำทางออฟไลน์อาจใช้เวลานานหรือค้าง/ไม่สำเร็จ\n\nกด "ตกลง" เพื่อดาวน์โหลดข้อมูลถนนต่อไป (อาจช้า)\nกด "ยกเลิก" เพื่อข้ามเฉพาะข้อมูลถนน (แผนที่ยังดาวน์โหลดตามปกติ แต่นำทางออฟไลน์ในพื้นที่นี้จะใช้ไม่ได้)');
+  }
+  if(skipRoads){
+    statusEl.textContent = 'ข้ามการดาวน์โหลดข้อมูลถนน (พื้นที่กว้างเกินไป)';
+    bar.style.width='90%';
+  } else {
+    statusEl.textContent = 'กำลังดาวน์โหลดข้อมูลถนนสำหรับนำทางออฟไลน์...';
+    bar.style.width='80%';
+    try{
+      const q = `[out:json][timeout:60];(way["highway"]["highway"!~"footway|path|steps|cycleway|pedestrian|track|construction"](${bbox.south},${bbox.west},${bbox.north},${bbox.east}););out body;>;out skel qt;`;
+      const res = await fetch(OVERPASS_URL, {method:'POST', body:'data='+encodeURIComponent(q)});
+      const osm = await res.json();
+      const built = buildRoadGraph(osm);
+      nodeCount = Object.keys(built.nodes).length;
+      edgeCount = built.edgeCount;
+      await idbPutMany('nodes', Object.entries(built.nodes).map(([k,v])=>[k,v]));
+      await idbPutMany('adjacency', Object.entries(built.adjacency).map(([k,v])=>[k,v]));
+    }catch(e){
+      toast('ดาวน์โหลดข้อมูลถนนไม่สำเร็จ (จะยังใช้แผนที่ออฟไลน์ได้ แต่นำทางออฟไลน์อาจไม่ได้)');
+    }
   }
 
   bar.style.width='100%';
@@ -1055,6 +1111,11 @@ function haversine(lat1,lon1,lat2,lon2){
   const dLat=toRad(lat2-lat1), dLon=toRad(lon2-lon1);
   const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+function bboxAreaKm2(bbox){
+  const latDist = haversine(bbox.south,bbox.west,bbox.north,bbox.west)/1000;
+  const lonDist = haversine(bbox.south,bbox.west,bbox.south,bbox.east)/1000;
+  return latDist*lonDist;
 }
 
 /* =========================================================================
