@@ -1,20 +1,24 @@
 /**
  * ===== OFFLINE MAP APP - Google Apps Script Backend =====
- * Database: Google Sheets (auto-created on first run)
+ * บัญชีเดียวคงที่ (username: meen / password: 5340) — ตรวจฝั่งเว็บแอปแล้วส่ง
+ * APP_TOKEN มาด้วยทุกครั้ง ฝั่งนี้แค่เช็คว่า token ตรงกันก่อนอนุญาตให้อ่าน/เขียนข้อมูล
+ *
+ * ⚠️ ค่า APP_TOKEN ด้านล่างต้องเหมือนกับ APP_TOKEN ใน index.html เป๊ะๆ
+ *
+ * Database: Google Sheets (auto-create sheet/หัวตารางให้เองตอนรันครั้งแรก)
  * Sheets:
- *   Users  : id | username | passwordHash | role | token | createdAt
- *   Places : id | userId | name | lat | lng | note | createdAt | updatedAt
+ *   Places : id | name | lat | lng | note | createdAt | updatedAt
  *
  * Deploy as Web App:
  *   Execute as: Me
  *   Who has access: Anyone
- *   IMPORTANT: every time you edit this code, you must create a NEW
- *   deployment version (Deploy > Manage deployments > Edit > New version)
- *   or your changes will NOT go live.
+ *   IMPORTANT: แก้โค้ดทีไร ต้องสร้าง deployment เวอร์ชันใหม่ทุกครั้ง
+ *   (Deploy > Manage deployments > แก้ไข > Version: New version > Deploy)
  */
 
 var TZ = 'Asia/Bangkok';
 var CACHE_TTL = 30; // seconds
+var APP_TOKEN = 'meen5340-a8f3e1c9'; // ต้องตรงกับ APP_TOKEN ใน index.html
 
 function getSS_() {
   return SpreadsheetApp.getActiveSpreadsheet();
@@ -35,8 +39,7 @@ function ensureSheet_(name, headers) {
 }
 
 function ensureSchema_() {
-  ensureSheet_('Users', ['id', 'username', 'passwordHash', 'role', 'token', 'createdAt']);
-  ensureSheet_('Places', ['id', 'userId', 'name', 'lat', 'lng', 'note', 'createdAt', 'updatedAt']);
+  ensureSheet_('Places', ['id', 'name', 'lat', 'lng', 'note', 'createdAt', 'updatedAt']);
 }
 
 function sheetToObjects_(sheet) {
@@ -72,12 +75,16 @@ function jsonOut_(obj) {
 }
 
 function invalidateCache_() {
-  CacheService.getScriptCache().removeAll(['bootstrap_all', 'bootstrap_public']);
+  CacheService.getScriptCache().remove('bootstrap');
+}
+
+function checkAuth_(body) {
+  return body && body.token === APP_TOKEN;
 }
 
 /**
  * All requests are POST with a text/plain body containing JSON:
- * { action: "...", ...params }
+ * { action: "...", token: "...", ...params }
  * (text/plain avoids CORS preflight issues with Apps Script)
  */
 function doPost(e) {
@@ -88,11 +95,14 @@ function doPost(e) {
   } catch (err) {
     return jsonOut_({ ok: false, error: 'ข้อมูลคำขอไม่ถูกต้อง' });
   }
+
+  if (!checkAuth_(body)) {
+    return jsonOut_({ ok: false, error: 'ไม่ได้รับอนุญาต (token ไม่ถูกต้อง)' });
+  }
+
   var action = body.action;
   try {
     switch (action) {
-      case 'register': return jsonOut_(handleRegister_(body));
-      case 'login': return jsonOut_(handleLogin_(body));
       case 'bootstrap': return jsonOut_(handleBootstrap_(body));
       case 'addPlace': return jsonOut_(handleAddPlace_(body));
       case 'updatePlace': return jsonOut_(handleUpdatePlace_(body));
@@ -108,132 +118,57 @@ function doGet(e) {
   return jsonOut_({ ok: true, message: 'Offline Map App API is running' });
 }
 
-/* ---------- Auth helpers ---------- */
-
-function getUserByToken_(token) {
-  if (!token) return null;
-  var sheet = ensureSheet_('Users', ['id', 'username', 'passwordHash', 'role', 'token', 'createdAt']);
-  var users = sheetToObjects_(sheet);
-  for (var i = 0; i < users.length; i++) {
-    if (users[i].token === token) return users[i];
-  }
-  return null;
-}
-
-function handleRegister_(body) {
-  var username = (body.username || '').trim();
-  var passwordHash = body.passwordHash || '';
-  if (!username || !passwordHash) return { ok: false, error: 'กรุณากรอกชื่อผู้ใช้และรหัสผ่าน' };
-
-  var sheet = ensureSheet_('Users', ['id', 'username', 'passwordHash', 'role', 'token', 'createdAt']);
-  var users = sheetToObjects_(sheet);
-  for (var i = 0; i < users.length; i++) {
-    if (users[i].username.toLowerCase() === username.toLowerCase()) {
-      return { ok: false, error: 'มีชื่อผู้ใช้นี้อยู่แล้ว' };
-    }
-  }
-  var isFirstUser = users.length === 0;
-  var id = Utilities.getUuid();
-  var token = Utilities.getUuid();
-  sheet.appendRow([id, username, passwordHash, isFirstUser ? 'admin' : 'user', token, nowISO_()]);
-  invalidateCache_();
-  return { ok: true, userId: id, username: username, role: isFirstUser ? 'admin' : 'user', token: token };
-}
-
-function handleLogin_(body) {
-  var username = (body.username || '').trim();
-  var passwordHash = body.passwordHash || '';
-  var sheet = ensureSheet_('Users', ['id', 'username', 'passwordHash', 'role', 'token', 'createdAt']);
-  var users = sheetToObjects_(sheet);
-  for (var i = 0; i < users.length; i++) {
-    if (users[i].username.toLowerCase() === username.toLowerCase()) {
-      if (users[i].passwordHash !== passwordHash) {
-        return { ok: false, error: 'รหัสผ่านไม่ถูกต้อง' };
-      }
-      // rotate token each login
-      var newToken = Utilities.getUuid();
-      var rowIndex = findRowIndexById_(sheet, users[i].id);
-      sheet.getRange(rowIndex, 5).setValue(newToken); // token column = 5
-      return { ok: true, userId: users[i].id, username: users[i].username, role: users[i].role, token: newToken };
-    }
-  }
-  return { ok: false, error: 'ไม่พบชื่อผู้ใช้นี้' };
-}
-
 /* ---------- Bootstrap (single combined load) ---------- */
 
 function handleBootstrap_(body) {
-  var user = getUserByToken_(body.token);
-  if (!user) return { ok: false, error: 'กรุณาเข้าสู่ระบบใหม่' };
-
-  var cacheKey = user.role === 'admin' ? 'bootstrap_all' : ('bootstrap_' + user.id);
   var cache = CacheService.getScriptCache();
-  var cached = cache.get(cacheKey);
+  var cached = cache.get('bootstrap');
   if (cached) {
     var parsed = JSON.parse(cached);
-    parsed.user = { id: user.id, username: user.username, role: user.role };
     parsed.cached = true;
     return parsed;
   }
 
-  var placesSheet = ensureSheet_('Places', ['id', 'userId', 'name', 'lat', 'lng', 'note', 'createdAt', 'updatedAt']);
-  var allPlaces = sheetToObjects_(placesSheet);
-  var places = user.role === 'admin' ? allPlaces : allPlaces.filter(function (p) { return p.userId === user.id; });
+  var placesSheet = ensureSheet_('Places', ['id', 'name', 'lat', 'lng', 'note', 'createdAt', 'updatedAt']);
+  var places = sheetToObjects_(placesSheet);
 
-  var result = { ok: true, places: places };
-  cache.put(cacheKey, JSON.stringify(result), CACHE_TTL);
-
-  result.user = { id: user.id, username: user.username, role: user.role };
-  result.cached = false;
+  var result = { ok: true, places: places, cached: false };
+  cache.put('bootstrap', JSON.stringify(result), CACHE_TTL);
   return result;
 }
 
-/* ---------- Places CRUD (permission enforced server-side) ---------- */
+/* ---------- Places CRUD ---------- */
 
 function handleAddPlace_(body) {
-  var user = getUserByToken_(body.token);
-  if (!user) return { ok: false, error: 'กรุณาเข้าสู่ระบบใหม่' };
   var name = (body.name || '').trim();
-  if (!name || typeof body.lat !== 'number' && isNaN(parseFloat(body.lat))) {
+  if (!name || (typeof body.lat !== 'number' && isNaN(parseFloat(body.lat)))) {
     return { ok: false, error: 'ข้อมูลสถานที่ไม่ครบ' };
   }
-  var sheet = ensureSheet_('Places', ['id', 'userId', 'name', 'lat', 'lng', 'note', 'createdAt', 'updatedAt']);
+  var sheet = ensureSheet_('Places', ['id', 'name', 'lat', 'lng', 'note', 'createdAt', 'updatedAt']);
   var id = Utilities.getUuid();
   var ts = nowISO_();
-  sheet.appendRow([id, user.id, name, parseFloat(body.lat), parseFloat(body.lng), body.note || '', ts, ts]);
+  sheet.appendRow([id, name, parseFloat(body.lat), parseFloat(body.lng), body.note || '', ts, ts]);
   invalidateCache_();
   return { ok: true, id: id };
 }
 
 function handleUpdatePlace_(body) {
-  var user = getUserByToken_(body.token);
-  if (!user) return { ok: false, error: 'กรุณาเข้าสู่ระบบใหม่' };
-  var sheet = ensureSheet_('Places', ['id', 'userId', 'name', 'lat', 'lng', 'note', 'createdAt', 'updatedAt']);
+  var sheet = ensureSheet_('Places', ['id', 'name', 'lat', 'lng', 'note', 'createdAt', 'updatedAt']);
   var rowIndex = findRowIndexById_(sheet, body.id);
   if (rowIndex === -1) return { ok: false, error: 'ไม่พบข้อมูล' };
-  var ownerId = sheet.getRange(rowIndex, 2).getValue();
-  if (user.role !== 'admin' && String(ownerId) !== String(user.id)) {
-    return { ok: false, error: 'ไม่มีสิทธิ์แก้ไขข้อมูลนี้' };
-  }
-  if (body.name !== undefined) sheet.getRange(rowIndex, 3).setValue(body.name);
-  if (body.lat !== undefined) sheet.getRange(rowIndex, 4).setValue(parseFloat(body.lat));
-  if (body.lng !== undefined) sheet.getRange(rowIndex, 5).setValue(parseFloat(body.lng));
-  if (body.note !== undefined) sheet.getRange(rowIndex, 6).setValue(body.note);
-  sheet.getRange(rowIndex, 8).setValue(nowISO_());
+  if (body.name !== undefined) sheet.getRange(rowIndex, 2).setValue(body.name);
+  if (body.lat !== undefined) sheet.getRange(rowIndex, 3).setValue(parseFloat(body.lat));
+  if (body.lng !== undefined) sheet.getRange(rowIndex, 4).setValue(parseFloat(body.lng));
+  if (body.note !== undefined) sheet.getRange(rowIndex, 5).setValue(body.note);
+  sheet.getRange(rowIndex, 7).setValue(nowISO_());
   invalidateCache_();
   return { ok: true };
 }
 
 function handleDeletePlace_(body) {
-  var user = getUserByToken_(body.token);
-  if (!user) return { ok: false, error: 'กรุณาเข้าสู่ระบบใหม่' };
-  var sheet = ensureSheet_('Places', ['id', 'userId', 'name', 'lat', 'lng', 'note', 'createdAt', 'updatedAt']);
+  var sheet = ensureSheet_('Places', ['id', 'name', 'lat', 'lng', 'note', 'createdAt', 'updatedAt']);
   var rowIndex = findRowIndexById_(sheet, body.id);
   if (rowIndex === -1) return { ok: false, error: 'ไม่พบข้อมูล' };
-  var ownerId = sheet.getRange(rowIndex, 2).getValue();
-  if (user.role !== 'admin' && String(ownerId) !== String(user.id)) {
-    return { ok: false, error: 'ไม่มีสิทธิ์ลบข้อมูลนี้' };
-  }
   sheet.deleteRow(rowIndex);
   invalidateCache_();
   return { ok: true };

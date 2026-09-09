@@ -37,6 +37,14 @@
   #tabs{display:flex;border-bottom:1px solid var(--line);}
   .tab{flex:1;text-align:center;padding:10px 4px;font-size:12px;background:none;border:none;color:var(--muted);border-bottom:2px solid transparent;}
   .tab.active{color:var(--text);border-bottom-color:var(--accent2);}
+  #searchBar{position:relative;padding:8px 10px;border-bottom:1px solid var(--line);flex:0 0 auto;}
+  #searchInput{width:100%;padding:9px 12px;border-radius:9px;border:1px solid var(--line);background:#0b1220;color:var(--text);font-size:14px;}
+  #searchResults{position:absolute;left:10px;right:10px;top:44px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;max-height:260px;overflow-y:auto;z-index:1200;display:none;box-shadow:0 8px 24px rgba(0,0,0,.4);}
+  #searchResults.show{display:block;}
+  .search-item{padding:9px 12px;font-size:13px;border-bottom:1px solid var(--line);cursor:pointer;}
+  .search-item:last-child{border-bottom:none;}
+  .search-item:active{background:var(--accent2);}
+  .search-item .tag{font-size:10px;color:var(--muted);display:block;margin-top:2px;}
   #panelBody{flex:1;overflow-y:auto;padding:10px;}
   .section{display:none;}
   .section.active{display:block;}
@@ -107,15 +115,13 @@
 <div id="authScreen" style="display:none;">
   <div id="authBox">
     <h2 id="authTitle">เข้าสู่ระบบ</h2>
-    <p class="sub" id="authSub">เข้าสู่ระบบเพื่อซิงก์หมุดที่บันทึกไว้กับ Google Sheets</p>
+    <p class="sub" id="authSub">เข้าสู่ระบบครั้งเดียว ครั้งต่อไปเปิดแอปแล้วเข้าใช้งานได้เลย</p>
     <label>ชื่อผู้ใช้</label>
     <input type="text" id="authUsername" autocomplete="username">
     <label>รหัสผ่าน</label>
     <input type="password" id="authPassword" autocomplete="current-password">
     <div id="authError"></div>
     <button class="btn btn-primary" id="authSubmitBtn" onclick="submitAuth()">เข้าสู่ระบบ</button>
-    <button class="btn btn-ghost" onclick="useOfflineGuest()">ใช้งานแบบไม่ล็อกอิน (ออฟไลน์เท่านั้น)</button>
-    <div id="authToggle" onclick="toggleAuthMode()">ยังไม่มีบัญชี? สมัครสมาชิก</div>
   </div>
 </div>
 
@@ -135,6 +141,10 @@
         <button class="tab active" data-tab="places" onclick="switchTab('places')">📍 หมุด</button>
         <button class="tab" data-tab="route" onclick="switchTab('route')">🧭 เส้นทาง</button>
         <button class="tab" data-tab="offline" onclick="switchTab('offline')">⬇️ ดาวน์โหลด</button>
+      </div>
+      <div id="searchBar">
+        <input type="text" id="searchInput" placeholder="🔍 ค้นหาสถานที่ / หมุดที่บันทึกไว้..." oninput="onSearchInput()">
+        <div id="searchResults"></div>
       </div>
       <div id="panelBody">
 
@@ -309,51 +319,31 @@ window.addEventListener('online', ()=>{ updateStatusPill(); flushOutbox(); });
 window.addEventListener('offline', updateStatusPill);
 
 /* =========================================================================
-   AUTH
+   AUTH — บัญชีเดียวคงที่ (ตรวจฝั่งเครื่อง ไม่ต้องมีเน็ตตอนล็อกอิน) ล็อกอินครั้งเดียวแล้วจำไว้
    ========================================================================= */
+const FIXED_USERNAME = 'meen';
+const FIXED_PASSWORD = '5340';
+// ต้องตรงกับ APP_TOKEN ใน Code.gs เป๊ะๆ — ใช้เป็นกุญแจให้ backend ยอมรับคำขอ
+const APP_TOKEN = 'meen5340-a8f3e1c9';
+
 let currentUser = JSON.parse(localStorage.getItem('mapapp_user')||'null');
-let authMode = 'login';
 
-function toggleAuthMode(){
-  authMode = authMode === 'login' ? 'register' : 'login';
-  document.getElementById('authTitle').textContent = authMode==='login' ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก';
-  document.getElementById('authSub').textContent = authMode==='login'
-    ? 'เข้าสู่ระบบเพื่อซิงก์หมุดที่บันทึกไว้กับ Google Sheets'
-    : 'คนแรกที่สมัครจะได้เป็นแอดมินอัตโนมัติ';
-  document.getElementById('authSubmitBtn').textContent = authMode==='login' ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก';
-  document.getElementById('authToggle').textContent = authMode==='login' ? 'ยังไม่มีบัญชี? สมัครสมาชิก' : 'มีบัญชีแล้ว? เข้าสู่ระบบ';
-  document.getElementById('authError').textContent = '';
-}
-
-async function submitAuth(){
+function submitAuth(){
   const username = document.getElementById('authUsername').value.trim();
   const password = document.getElementById('authPassword').value;
   const errEl = document.getElementById('authError');
   errEl.textContent = '';
-  if(!username || !password){ errEl.textContent = 'กรอกให้ครบทั้งสองช่อง'; return; }
-  if(!navigator.onLine){ errEl.textContent = 'ต้องมีอินเทอร์เน็ตสำหรับเข้าสู่ระบบ/สมัครครั้งแรก'; return; }
-  try{
-    const passwordHash = await sha256Hex(password);
-    const r = await apiCallNoAuth(authMode==='login'?'login':'register', {username, passwordHash});
-    if(!r.ok){ errEl.textContent = r.error || 'เกิดข้อผิดพลาด'; return; }
-    currentUser = {userId:r.userId, username:r.username, role:r.role, token:r.token};
-    localStorage.setItem('mapapp_user', JSON.stringify(currentUser));
-    enterApp();
-  }catch(e){ errEl.textContent = 'เชื่อมต่อไม่ได้: '+e.message; }
-}
-async function apiCallNoAuth(action, payload){
-  const res = await fetch(SCRIPT_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify(Object.assign({action}, payload))});
-  return res.json();
-}
-
-function useOfflineGuest(){
-  currentUser = {userId:'guest', username:'ผู้เยี่ยมชม (ออฟไลน์)', role:'guest', token:null};
+  if(username !== FIXED_USERNAME || password !== FIXED_PASSWORD){
+    errEl.textContent = 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง';
+    return;
+  }
+  currentUser = {userId:FIXED_USERNAME, username:FIXED_USERNAME, role:'admin', token:APP_TOKEN};
   localStorage.setItem('mapapp_user', JSON.stringify(currentUser));
   enterApp();
-  toast('โหมดออฟไลน์: หมุดที่เพิ่มจะเก็บไว้ในเครื่องนี้เท่านั้น');
 }
 
 function doLogout(){
+  if(!confirm('ออกจากระบบ? ครั้งหน้าต้องกรอกรหัสผ่านใหม่')) return;
   localStorage.removeItem('mapapp_user');
   currentUser = null;
   document.getElementById('app').style.display='none';
@@ -363,8 +353,7 @@ function doLogout(){
 function enterApp(){
   document.getElementById('authScreen').style.display='none';
   document.getElementById('app').style.display='flex';
-  document.getElementById('userBadge').innerHTML =
-    currentUser.username + (currentUser.role==='admin' ? ' <span class="badge admin">admin</span>' : '');
+  document.getElementById('userBadge').textContent = currentUser.username;
   initMapIfNeeded();
   loadBootstrap();
   loadAreaList();
@@ -375,11 +364,6 @@ function enterApp(){
    ========================================================================= */
 let placesCache = [];
 async function loadBootstrap(){
-  if(currentUser.role==='guest'){
-    placesCache = JSON.parse(localStorage.getItem('mapapp_guest_places')||'[]');
-    renderPlaces();
-    return;
-  }
   if(!navigator.onLine){
     placesCache = JSON.parse(localStorage.getItem('mapapp_places_cache')||'[]');
     renderPlaces();
@@ -510,12 +494,11 @@ function openAddPlaceForm(latlng){
 
 async function savePlace(p){
   const localId = 'local-'+Date.now();
-  const record = {id:localId, userId:currentUser.userId, name:p.name, lat:p.lat, lng:p.lng, note:p.note, createdAt:new Date().toISOString(), updatedAt:new Date().toISOString()};
+  const record = {id:localId, name:p.name, lat:p.lat, lng:p.lng, note:p.note, createdAt:new Date().toISOString(), updatedAt:new Date().toISOString()};
   placesCache.push(record);
   renderPlaces();
   persistLocalPlaces();
 
-  if(currentUser.role==='guest'){ toast('บันทึกหมุดในเครื่อง (โหมดออฟไลน์)'); return; }
   if(!navigator.onLine){ queueOutbox('addPlace', p); return; }
   try{
     const r = await apiCall('addPlace', p);
@@ -529,14 +512,12 @@ async function deletePlace(id){
   placesCache = placesCache.filter(p=>p.id!==id);
   renderPlaces();
   persistLocalPlaces();
-  if(currentUser.role==='guest') return;
   if(!navigator.onLine){ queueOutbox('deletePlace', {id}); return; }
   try{ await apiCall('deletePlace', {id}); }catch(e){ queueOutbox('deletePlace', {id}); }
 }
 
 function persistLocalPlaces(){
-  if(currentUser.role==='guest') localStorage.setItem('mapapp_guest_places', JSON.stringify(placesCache));
-  else localStorage.setItem('mapapp_places_cache', JSON.stringify(placesCache));
+  localStorage.setItem('mapapp_places_cache', JSON.stringify(placesCache));
 }
 
 function renderPlaces(){
@@ -560,6 +541,70 @@ function renderPlaces(){
   });
 }
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* =========================================================================
+   SEARCH BAR (below the tab menu) — filters saved places + online geocoding
+   ========================================================================= */
+let searchDebounceTimer = null;
+function onSearchInput(){
+  const q = document.getElementById('searchInput').value.trim();
+  const box = document.getElementById('searchResults');
+  clearTimeout(searchDebounceTimer);
+  if(!q){ box.classList.remove('show'); box.innerHTML=''; return; }
+
+  // 1) instant local match against saved places (works offline)
+  const localMatches = placesCache.filter(p => p.name && p.name.toLowerCase().includes(q.toLowerCase()));
+  renderSearchResults(localMatches, []);
+
+  // 2) debounced online geocoding (address / place name lookup)
+  if(navigator.onLine){
+    searchDebounceTimer = setTimeout(async ()=>{
+      try{
+        const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=5&q=' + encodeURIComponent(q);
+        const res = await fetch(url);
+        const results = await res.json();
+        renderSearchResults(localMatches, results);
+      }catch(e){ /* offline or blocked — keep local matches only */ }
+    }, 450);
+  }
+}
+
+function renderSearchResults(localMatches, geoResults){
+  const box = document.getElementById('searchResults');
+  if(!localMatches.length && !geoResults.length){ box.classList.remove('show'); box.innerHTML=''; return; }
+  let html = '';
+  localMatches.forEach(p=>{
+    html += `<div class="search-item" onclick='searchGoTo(${p.lat},${p.lng},true)'>
+      📍 ${escapeHtml(p.name)}<span class="tag">หมุดที่บันทึกไว้</span></div>`;
+  });
+  geoResults.forEach(r=>{
+    html += `<div class="search-item" onclick='searchGoTo(${r.lat},${r.lon},false)'>
+      🌐 ${escapeHtml(r.display_name)}<span class="tag">ผลค้นหาออนไลน์</span></div>`;
+  });
+  box.innerHTML = html;
+  box.classList.add('show');
+}
+
+function searchGoTo(lat, lng, isSaved){
+  map.setView([lat,lng], 16);
+  document.getElementById('searchResults').classList.remove('show');
+  document.getElementById('searchInput').value='';
+  if(!isSaved){
+    // offer to save this searched location as a pin
+    if(confirm('ต้องการบันทึกตำแหน่งนี้เป็นหมุดหรือไม่?')){
+      const name = prompt('ชื่อสถานที่:') || 'สถานที่ที่ค้นหา';
+      switchTab('places');
+      savePlace({name, lat, lng, note:''});
+    }
+  } else {
+    switchTab('places');
+  }
+}
+
+document.addEventListener('click', function(e){
+  const bar = document.getElementById('searchBar');
+  if(bar && !bar.contains(e.target)) document.getElementById('searchResults').classList.remove('show');
+});
 
 /* =========================================================================
    TABS
