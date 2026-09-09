@@ -32,8 +32,8 @@
   .iconbtn:active{background:var(--accent2);}
 
   #main{flex:1;display:flex;min-height:0;position:relative;}
-  #map{flex:1;min-width:0;background:#0a0f1a;}
-  #panel{width:320px;flex:0 0 auto;background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden;}
+  #map{flex:1;min-width:0;background:#0a0f1a;position:relative;z-index:1;}
+  #panel{width:320px;flex:0 0 auto;background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden;position:relative;z-index:2000;transform:translateZ(0);}
   #tabs{display:flex;border-bottom:1px solid var(--line);}
   .tab{flex:1;text-align:center;padding:10px 4px;font-size:12px;background:none;border:none;color:var(--muted);border-bottom:2px solid transparent;}
   .tab.active{color:var(--text);border-bottom-color:var(--accent2);}
@@ -91,7 +91,8 @@
 
   /* ---------- mobile ---------- */
   @media (max-width:720px){
-    #panel{position:absolute;left:0;right:0;bottom:0;width:auto;height:46%;border-left:none;border-top:1px solid var(--line);border-radius:16px 16px 0 0;box-shadow:0 -6px 24px rgba(0,0,0,.4);}
+    #panel{position:fixed;left:0;right:0;bottom:0;top:auto;width:auto;height:46%;border-left:none;border-top:1px solid var(--line);border-radius:16px 16px 0 0;box-shadow:0 -6px 24px rgba(0,0,0,.4);padding-bottom:env(safe-area-inset-bottom);}
+    #map{position:absolute;top:0;left:0;right:0;bottom:0;}
     #topbar h1{font-size:13px;}
     #userBadge{max-width:70px;}
   }
@@ -450,6 +451,13 @@ function initMapIfNeeded(){
   }, ()=>{}, {timeout:4000});
 
   map.on('click', onMapClick);
+
+  // fix map sizing after the CSS layout (topbar/panel) has actually settled —
+  // otherwise Leaflet can measure the wrong size on first paint (mobile Safari)
+  setTimeout(()=>map.invalidateSize(), 100);
+  setTimeout(()=>map.invalidateSize(), 500);
+  window.addEventListener('resize', ()=>{ if(map) map.invalidateSize(); });
+  window.addEventListener('orientationchange', ()=>{ if(map) setTimeout(()=>map.invalidateSize(),300); });
 }
 
 function onMapClick(e){
